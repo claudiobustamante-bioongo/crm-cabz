@@ -135,4 +135,5 @@ export interface InversionesData {
   retiro: CuentaSaldo[];
   netWorth: NetWorth | null;
   banxico: boolean;   // hay token configurado en el servidor
+  flex: boolean;      // hay token + query de IBKR Flex en el servidor
 }

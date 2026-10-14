@@ -93,5 +93,6 @@ export async function loadInversiones(supabase: SupabaseClient): Promise<Inversi
     retiro: cs.map((c) => { const s = sal.find((x) => x.cuenta_id === c.id); return { id: c.id, nombre: c.nombre, tipo: c.tipo, moneda: c.moneda, titular: c.titular, saldo: s ? Number(s.saldo) : null, fecha: s?.fecha ?? null, fuente: s?.fuente ?? null }; }),
     netWorth: nw.data ? (num(nw.data as Record<string, unknown>) as unknown as NetWorth) : null,
     banxico: !!process.env.BANXICO_TOKEN,
+    flex: !!(process.env.IBKR_FLEX_TOKEN && process.env.IBKR_FLEX_QUERY_ID),
   };
 }

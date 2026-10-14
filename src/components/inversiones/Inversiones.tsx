@@ -101,6 +101,18 @@ export function Inversiones({ initial }: { initial: InversionesData }) {
     } catch (e) { aviso("Banxico: " + (e as Error).message); } finally { setBusy(false); }
   };
 
+  const traerFlex = async () => {
+    setBusy(true);
+    try {
+      const r = await fetch("/api/ibkr/flex", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || r.statusText);
+      const ok = (j.filas as { cuenta: string; periodo?: string; parcial?: boolean; error?: string }[]).filter((f) => !f.error);
+      aviso(ok.length ? `IBKR: ${ok.map((f) => `${f.cuenta.replace(/^IBKR /, "")} ${f.periodo?.slice(0, 7)}${f.parcial ? " (parcial)" : ""}`).join(", ")}. Recarga para ver la tabla.` : "IBKR no devolvió cuentas conocidas.");
+      setTimeout(() => window.location.reload(), 2500);
+    } catch (e) { aviso("IBKR Flex: " + (e as Error).message); } finally { setBusy(false); }
+  };
+
   const importar = async (files: FileList | null) => {
     if (!files?.length) return; setBusy(true);
     let n = 0;
@@ -154,9 +166,15 @@ export function Inversiones({ initial }: { initial: InversionesData }) {
           <div><label htmlFor="v-year">Año</label><select id="v-year" value={year} onChange={(e) => setYear(+e.target.value)}>{years.map((y) => <option key={y} value={y}>{y}</option>)}</select></div>
           <div><label htmlFor="v-mode">Moneda</label><select id="v-mode" value={mode} onChange={(e) => setMode(e.target.value as "mxn" | "usd")}><option value="mxn">MXN (al FIX del mes)</option><option value="usd">USD</option></select></div>
           <div><label htmlFor="v-acc">Cuenta</label><select id="v-acc" value={acc} onChange={(e) => setAcc(e.target.value)}><option value="">Ambas</option>{initial.cuentasIbkr.map((c) => <option key={c.id} value={c.id}>{nombre(c)}</option>)}</select></div>
-          <div><label>&nbsp;</label><label className="door" htmlFor="v-csv" style={{ margin: 0, padding: 9 }}>⬆ Subir CSV de IBKR</label><input id="v-csv" type="file" accept=".csv" multiple hidden onChange={(e) => { importar(e.target.files); e.target.value = ""; }} /></div>
+          <div><label>&nbsp;</label>
+            {initial.flex
+              ? <button className="btn sm" type="button" style={{ width: "100%" }} onClick={traerFlex} disabled={busy}>⟳ Traer de IBKR (Flex)</button>
+              : <label className="door" htmlFor="v-csv" style={{ margin: 0, padding: 9 }}>⬆ Subir CSV de IBKR</label>}
+            <input id="v-csv" type="file" accept=".csv" multiple hidden onChange={(e) => { importar(e.target.files); e.target.value = ""; }} /></div>
         </div>
-        <p className="hint">El archivo mensual de IBKR (Activity Statement, CSV) se llama U&lt;cuenta&gt;_AAAAMM_AAAAMM.csv. Si ya existe el mes, se reemplaza.</p>
+        <p className="hint">{initial.flex
+          ? <>Flex trae el mes que tenga configurado la query (normalmente el mes anterior) para las dos cuentas y reemplaza el mes si ya existía. ¿Un CSV suelto? <label htmlFor="v-csv" style={{ display: "inline", cursor: "pointer", textDecoration: "underline", color: "var(--gold-dark)", margin: 0, fontWeight: 600 }}>súbelo aquí</label>.</>
+          : <>El archivo mensual de IBKR (Activity Statement, CSV) se llama U&lt;cuenta&gt;_AAAAMM_AAAAMM.csv. Si ya existe el mes, se reemplaza. Con IBKR_FLEX_TOKEN y IBKR_FLEX_QUERY_ID en Vercel aparece el botón para traerlo solo.</>}</p>
       </div>
 
       <div className="stat-row">

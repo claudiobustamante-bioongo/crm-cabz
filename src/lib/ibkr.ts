@@ -18,7 +18,7 @@ const normSec=(s:any)=>{s=String(s||'').replace(/^\uFEFF/,'').trim();return IB_S
 const normLbl=(s:any,m:Record<string,string>)=>{s=String(s||'').trim();return m[s]||s;};
 const ETF_SYMBOLS=new Set(['TMF','TLT','YINN','PSP','MCHI','BIL','EWJ','HDV','IVV','IBIT','LQD','VIXY','UVIX','JBBB','SHY','AGGU','EIMI','EWSP','FUSA','HMAD','ICGA','IUIT','IUVL','LQDA','NDIA','NAFTRACISHRS','VAPU','VWCG','WSML','XDEW','IHYU','SPY','QQQ','VTI','EFA','EEM','GLD','SLV','USO','DTLA','IB01','IDTL','SDHA','SDIA','UDOW','TQQQ']);
 const ACCIONES_SYMBOLS=new Set(['CYBN','OZEM','BRK B','BRKB','ETOR','LLY','MSFT','REGN','V','VRTX','TMO','BITO']);
-function classify(symbol:string,category:string){const sym=(symbol||'').trim().toUpperCase();const ns=sym.replace(/\s+/g,'');const cat=(category||'').toLowerCase();
+export function classify(symbol:string,category:string){const sym=(symbol||'').trim().toUpperCase();const ns=sym.replace(/\s+/g,'');const cat=(category||'').toLowerCase();
   if(cat.includes('opcion')||cat.includes('option'))return'opciones';
   if(cat.includes('fórex')||cat.includes('forex'))return'forex';
   if(cat.includes('bono'))return'bonos';
