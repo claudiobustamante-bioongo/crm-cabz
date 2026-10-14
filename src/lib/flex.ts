@@ -1,7 +1,7 @@
 /* Flex Web Service de IBKR → mismas filas que el CSV mensual (IbkrRow), sin subir archivos.
    Secciones que debe traer la Flex Query (formato XML, periodo de UN mes):
    · Account Information · Cash Report · Realized & Unrealized Performance Summary (in Base)
-   · Equity Summary in Base by Report Date (NAV por clase) · Change in NAV (respaldo del NAV total) */
+   · Open Positions (summary, in Base) · Change in NAV  (o Equity Summary in Base si existe) */
 import { XMLParser } from "fast-xml-parser";
 import { classify, type IbkrRow } from "./ibkr";
 
@@ -36,7 +36,7 @@ export interface FlexRow extends IbkrRow { cuenta: string; year: number; mes: nu
 
 /** Convierte el XML de Flex en filas mensuales (una por cuenta). */
 export function parseFlex(xml: string): FlexRow[] {
-  const p = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "", isArray: (name) => ["FlexStatement", "FIFOPerformanceSummaryUnderlying", "CashReportCurrency", "EquitySummaryByReportDateInBase", "ChangeInNAV"].includes(name) });
+  const p = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "", isArray: (name) => ["FlexStatement", "FIFOPerformanceSummaryUnderlying", "CashReportCurrency", "EquitySummaryByReportDateInBase", "ChangeInNAV", "OpenPosition"].includes(name) });
   const doc = p.parse(xml);
   const stmts = arr<Record<string, unknown>>(doc?.FlexQueryResponse?.FlexStatements?.FlexStatement);
   if (!stmts.length) throw new FlexError("El reporte no trae FlexStatement: revisa la query.");
@@ -77,15 +77,26 @@ export function parseFlex(xml: string): FlexRow[] {
       r.dep = num(cash.deposits) + num(cash.withdrawals) + num(cash.accountTransfers) + num(cash.internalTransfers);
     }
 
-    // NAV por clase: último día del periodo en Equity Summary; respaldo Change in NAV
+    // NAV por clase. Preferencia: Equity Summary in Base (último día). Si no viene:
+    // efectivo = endingCash del Cash Report, acciones/opciones/bonos = Open Positions (valor en base),
+    // total = Change in NAV (endingValue), devengos = lo que falta para cuadrar.
     const eq = arr<Record<string, unknown>>((s.EquitySummaryInBase as Record<string, unknown> | undefined)?.EquitySummaryByReportDateInBase as never)
       .sort((a, b) => String(a.reportDate).localeCompare(String(b.reportDate))).at(-1);
+    const nav = arr<Record<string, unknown>>(s.ChangeInNAV as never)[0];
     if (eq) {
       r.nav_efe = num(eq.cash); r.nav_acc = num(eq.stock); r.nav_opc = num(eq.options); r.nav_bono = num(eq.bonds);
       r.nav_dev = num(eq.dividendAccruals) + num(eq.interestAccruals); r.nav_tot = num(eq.total);
     } else {
-      const nav = arr<Record<string, unknown>>(s.ChangeInNAV as never)[0];
-      if (nav) r.nav_tot = num(nav.endingValue);
+      r.nav_tot = num(nav?.endingValue);
+      r.nav_efe = num(cash?.endingCash);
+      arr<Record<string, unknown>>((s.OpenPositions as Record<string, unknown> | undefined)?.OpenPosition as never).forEach((o) => {
+        if (String(o.levelOfDetail ?? "SUMMARY").toUpperCase() === "LOT") return;   // evita duplicar lotes
+        const cat = String(o.assetCategory ?? "").toUpperCase();
+        const v = o.positionValueInBase != null ? num(o.positionValueInBase) : num(o.positionValue) * (num(o.fxRateToBase) || 1);
+        if (cat === "STK") r.nav_acc += v; else if (cat === "OPT" || cat === "FOP") r.nav_opc += v; else if (cat === "BOND") r.nav_bono += v;
+      });
+      if (r.nav_tot) r.nav_dev = +(r.nav_tot - r.nav_efe - r.nav_acc - r.nav_opc - r.nav_bono).toFixed(2);
+      else r.nav_tot = r.nav_efe + r.nav_acc + r.nav_opc + r.nav_bono;
     }
     (["re", "ra", "ro", "rf", "rb", "sne", "sna", "sno", "snf", "snb", "db", "dr", "cb", "cr", "cm", "ib", "dep", "nav_efe", "nav_acc", "nav_opc", "nav_bono", "nav_dev", "nav_tot"] as const)
       .forEach((k) => { r[k] = +r[k].toFixed(2); });
