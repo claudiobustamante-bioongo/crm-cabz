@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 export const TABS = [
   { href: "/ingresos", label: "Ingresos", title: "Lo que entra, y qué queda", ready: true },
   { href: "/gastos", label: "Gastos", title: "Registra, y abajo se acomoda solo", ready: true },
-  { href: "/inversiones", label: "Inversiones e impuestos", title: "Inversiones e impuestos, al centavo", ready: false },
+  { href: "/inversiones", label: "Inversiones e impuestos", title: "Inversiones e impuestos, al centavo", ready: true },
   { href: "/facturacion", label: "Facturación", title: "Facturación · CFDI", ready: false },
   { href: "/akela", label: "Akela", title: "Familia Akela · proyección y control", ready: false },
   { href: "/analiticas", label: "Analíticas", title: "Analíticas · a dónde se va tu vida", ready: false },

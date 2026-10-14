@@ -108,3 +108,31 @@ export interface IngresosData {
   ingresos: Ingreso[];
   salidas: SalidaMes[];
 }
+
+/** Fila de ibkr_estados_mensuales (importes USD). */
+export interface IbkrMes {
+  id: string;
+  cuenta_id: string;
+  periodo: string;   // YYYY-MM-01
+  real_etf: number; real_acc: number; real_opc: number; real_fx: number; real_bono: number;
+  nr_etf: number; nr_acc: number; nr_opc: number; nr_fx: number; nr_bono: number;
+  div_bruto: number; div_ret: number; cupon: number; cupon_ret: number;
+  comisiones: number; int_broker: number; depositos: number;
+  nav_efe: number; nav_acc: number; nav_opc: number; nav_bono: number; nav_dev: number; nav_final: number;
+  fuente: string | null;
+}
+
+export interface TipoCambio { fecha: string; moneda: string; tc_mxn: number; fuente: string }
+
+export interface CuentaSaldo { id: string; nombre: string; tipo: string; moneda: string; titular: string; saldo: number | null; fecha: string | null; fuente: string | null }
+
+export interface NetWorth { retiro_inversion_mxn: number; efectivo_mxn: number; tarjetas_mxn: number; prestamos_mxn: number; neto_mxn: number }
+
+export interface InversionesData {
+  cuentasIbkr: { id: string; nombre: string; titular: string }[];
+  filas: IbkrMes[];
+  tc: TipoCambio[];
+  retiro: CuentaSaldo[];
+  netWorth: NetWorth | null;
+  banxico: boolean;   // hay token configurado en el servidor
+}

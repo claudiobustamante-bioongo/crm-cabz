@@ -88,7 +88,6 @@ export function Ingresos({ initial }: { initial: IngresosData }) {
     const reales = [...new Set(initial.salidas.map((s) => s.mes))].sort();
     return reales.at(-1) ?? "all";
   });
-  const salidaDe = (k: string) => initial.salidas.find((s) => s.mes === k)?.total ?? 0;
   const enRango = (k: string) => fmes === "all" || k === fmes;
   const inM = ings.filter((i) => enRango(mesKey(i.fecha)) && esEntrada(i));
   const tin = inM.reduce((a, i) => a + i.monto_mxn, 0);

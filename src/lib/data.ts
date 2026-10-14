@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Asignacion, Catalogo, Cuenta, Evento, GastosData, Ingreso, IngresosData, Movimiento, Rubro } from "./types";
+import type { Asignacion, Catalogo, Cuenta, Evento, GastosData, IbkrMes, Ingreso, IngresosData, InversionesData, Movimiento, NetWorth, Rubro, TipoCambio } from "./types";
 
 const TIPOS_GASTO = ["gasto", "ahorro", "abono_deuda"];
 
@@ -71,5 +71,27 @@ export async function loadIngresos(supabase: SupabaseClient, anio: number): Prom
     pagadores: must<Catalogo[]>(pagadores, "pagadores"),
     ingresos: must<Ingreso[]>(ingresos, "ingresos"),
     salidas: Object.entries(porMes).map(([mes, total]) => ({ mes, total })).sort((a, b) => a.mes.localeCompare(b.mes)),
+  };
+}
+
+export async function loadInversiones(supabase: SupabaseClient): Promise<InversionesData> {
+  const [cuentas, filas, tc, saldos, nw] = await Promise.all([
+    supabase.from("cuentas").select("id,nombre,tipo,moneda,activa,titular_id,pagadores!cuentas_titular_id_fkey(codigo)").eq("activa", true).in("tipo", ["inversion", "retiro"]).order("nombre"),
+    supabase.from("ibkr_estados_mensuales").select("id,cuenta_id,periodo,real_etf,real_acc,real_opc,real_fx,real_bono,nr_etf,nr_acc,nr_opc,nr_fx,nr_bono,div_bruto,div_ret,cupon,cupon_ret,comisiones,int_broker,depositos,nav_efe,nav_acc,nav_opc,nav_bono,nav_dev,nav_final,fuente").order("periodo").range(0, 4999),
+    supabase.from("tipos_cambio").select("fecha,moneda,tc_mxn,fuente").eq("moneda", "USD").order("fecha"),
+    supabase.from("v_saldo_actual").select("cuenta_id,fecha,saldo,fuente"),
+    supabase.from("v_net_worth").select("*").maybeSingle(),
+  ]);
+  type CRow = { id: string; nombre: string; tipo: string; moneda: string; pagadores: { codigo: string } | { codigo: string }[] | null };
+  const cs = must<CRow[]>(cuentas, "cuentas").map((c) => ({ ...c, titular: (Array.isArray(c.pagadores) ? c.pagadores[0]?.codigo : c.pagadores?.codigo) ?? "" }));
+  const sal = must<{ cuenta_id: string; fecha: string; saldo: number; fuente: string }[]>(saldos, "saldos");
+  const num = (r: Record<string, unknown>) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, typeof v === "string" && /^-?\d+(\.\d+)?$/.test(v) ? Number(v) : v]));
+  return {
+    cuentasIbkr: cs.filter((c) => c.tipo === "inversion").map((c) => ({ id: c.id, nombre: c.nombre, titular: c.titular })),
+    filas: must<Record<string, unknown>[]>(filas, "ibkr").map(num) as unknown as IbkrMes[],
+    tc: must<TipoCambio[]>(tc, "tipos_cambio").map((t) => ({ ...t, tc_mxn: Number(t.tc_mxn) })),
+    retiro: cs.map((c) => { const s = sal.find((x) => x.cuenta_id === c.id); return { id: c.id, nombre: c.nombre, tipo: c.tipo, moneda: c.moneda, titular: c.titular, saldo: s ? Number(s.saldo) : null, fecha: s?.fecha ?? null, fuente: s?.fuente ?? null }; }),
+    netWorth: nw.data ? (num(nw.data as Record<string, unknown>) as unknown as NetWorth) : null,
+    banxico: !!process.env.BANXICO_TOKEN,
   };
 }
