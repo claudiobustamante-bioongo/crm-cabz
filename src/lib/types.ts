@@ -65,3 +65,46 @@ export interface GastosData {
   movimientos: Movimiento[];
   asignaciones: Asignacion[];
 }
+
+export type TipoIngreso = "sueldo" | "comision" | "bono" | "dividendo_interes" | "reembolso" | "aportacion_akela" | "otro";
+
+/** Fila de v_ingresos. */
+export interface Ingreso {
+  id: string;
+  fecha: string;
+  mes: string;
+  estado: "real" | "presupuesto";
+  descripcion: string | null;
+  monto: number;
+  monto_mxn: number;
+  moneda: string;
+  cuenta: string;
+  cuenta_destino: string | null;
+  tiene_cfdi: boolean;
+  cfdi_uuid: string | null;
+  notas: string | null;
+  tipo: TipoIngreso;
+  bruto: number | null;
+  iva: number;
+  ret_isr: number;
+  ret_iva: number;
+  cliente: string | null;
+  proyectado: boolean;
+  aporta: string | null;
+  aporta_nombre: string | null;
+}
+
+/** Salida mensual (gasto + ahorro + abono a deuda, reales) para liquidez. */
+export interface SalidaMes {
+  mes: string;   // YYYY-MM
+  total: number;
+}
+
+export interface IngresosData {
+  anio: number;
+  anios: number[];
+  cuentas: Cuenta[];
+  pagadores: Catalogo[];
+  ingresos: Ingreso[];
+  salidas: SalidaMes[];
+}

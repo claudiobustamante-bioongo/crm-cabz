@@ -3,7 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 export const TABS = [
-  { href: "/ingresos", label: "Ingresos", title: "Lo que entra, y qué queda", ready: false },
+  { href: "/ingresos", label: "Ingresos", title: "Lo que entra, y qué queda", ready: true },
   { href: "/gastos", label: "Gastos", title: "Registra, y abajo se acomoda solo", ready: true },
   { href: "/inversiones", label: "Inversiones e impuestos", title: "Inversiones e impuestos, al centavo", ready: false },
   { href: "/facturacion", label: "Facturación", title: "Facturación · CFDI", ready: false },
