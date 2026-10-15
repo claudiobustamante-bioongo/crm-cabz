@@ -94,5 +94,6 @@ export async function loadInversiones(supabase: SupabaseClient): Promise<Inversi
     netWorth: nw.data ? (num(nw.data as Record<string, unknown>) as unknown as NetWorth) : null,
     banxico: !!process.env.BANXICO_TOKEN,
     flex: !!(process.env.IBKR_FLEX_TOKEN && process.env.IBKR_FLEX_QUERY_ID),
+    flexHoy: !!(process.env.IBKR_FLEX_TOKEN && process.env.IBKR_FLEX_QUERY_MTD),
   };
 }

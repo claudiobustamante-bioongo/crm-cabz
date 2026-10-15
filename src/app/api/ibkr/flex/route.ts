@@ -12,7 +12,8 @@ export const maxDuration = 60;
 export async function POST(req: Request) {
   const token = process.env.IBKR_FLEX_TOKEN;
   const body = await req.json().catch(() => ({}));
-  const queryId = String(body?.queryId || process.env.IBKR_FLEX_QUERY_ID || "");
+  // hoy=true usa la query Month-to-Date (NAV al día); si no, la mensual (mes anterior)
+  const queryId = String(body?.queryId || (body?.hoy ? process.env.IBKR_FLEX_QUERY_MTD : process.env.IBKR_FLEX_QUERY_ID) || "");
   if (!token || !queryId) return NextResponse.json({ error: "Faltan IBKR_FLEX_TOKEN / IBKR_FLEX_QUERY_ID en Vercel." }, { status: 503 });
 
   const supabase = await createClient();
@@ -41,7 +42,7 @@ export async function POST(req: Request) {
       const { error: e1 } = await supabase.from("ibkr_estados_mensuales").upsert(row, { onConflict: "cuenta_id,periodo" });
       if (e1) throw e1;
       const fechaSaldo = `${r.hasta.slice(0, 4)}-${r.hasta.slice(4, 6)}-${r.hasta.slice(6, 8)}`;
-      await supabase.from("saldos_cuenta").upsert({ cuenta_id: c.id, fecha: fechaSaldo, saldo: r.nav_tot, fuente: "IBKR Flex" }, { onConflict: "cuenta_id,fecha" });
+      await supabase.from("saldos_cuenta").upsert({ cuenta_id: c.id, fecha: fechaSaldo, saldo: r.nav_tot, fuente: r.parcial ? "IBKR Flex (hoy)" : "IBKR Flex" }, { onConflict: "cuenta_id,fecha" });
       out.push({ cuenta: c.nombre, periodo, parcial: r.parcial, nav: r.nav_tot, realizada: row.pnl_realizado });
     }
     return NextResponse.json({ ok: true, filas: out });

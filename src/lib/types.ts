@@ -136,4 +136,5 @@ export interface InversionesData {
   netWorth: NetWorth | null;
   banxico: boolean;   // hay token configurado en el servidor
   flex: boolean;      // hay token + query de IBKR Flex en el servidor
+  flexHoy: boolean;   // hay query Month-to-Date para el NAV de hoy
 }

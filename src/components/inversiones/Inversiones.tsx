@@ -101,10 +101,10 @@ export function Inversiones({ initial }: { initial: InversionesData }) {
     } catch (e) { aviso("Banxico: " + (e as Error).message); } finally { setBusy(false); }
   };
 
-  const traerFlex = async () => {
+  const traerFlex = async (hoy = false) => {
     setBusy(true);
     try {
-      const r = await fetch("/api/ibkr/flex", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
+      const r = await fetch("/api/ibkr/flex", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hoy }) });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || r.statusText);
       const ok = (j.filas as { cuenta: string; periodo?: string; parcial?: boolean; error?: string }[]).filter((f) => !f.error);
@@ -168,7 +168,7 @@ export function Inversiones({ initial }: { initial: InversionesData }) {
           <div><label htmlFor="v-acc">Cuenta</label><select id="v-acc" value={acc} onChange={(e) => setAcc(e.target.value)}><option value="">Ambas</option>{initial.cuentasIbkr.map((c) => <option key={c.id} value={c.id}>{nombre(c)}</option>)}</select></div>
           <div><label>&nbsp;</label>
             {initial.flex
-              ? <button className="btn sm" type="button" style={{ width: "100%" }} onClick={traerFlex} disabled={busy}>⟳ Traer de IBKR (Flex)</button>
+              ? <button className="btn sm" type="button" style={{ width: "100%" }} onClick={() => traerFlex(false)} disabled={busy}>⟳ Traer de IBKR (Flex)</button>
               : <label className="door" htmlFor="v-csv" style={{ margin: 0, padding: 9 }}>⬆ Subir CSV de IBKR</label>}
             <input id="v-csv" type="file" accept=".csv" multiple hidden onChange={(e) => { importar(e.target.files); e.target.value = ""; }} /></div>
         </div>
@@ -277,8 +277,11 @@ export function Inversiones({ initial }: { initial: InversionesData }) {
             <div><label htmlFor="s-saldo">Saldo</label><input id="s-saldo" type="number" inputMode="decimal" value={sSaldo} onChange={(e) => setSSaldo(e.target.value)} /></div>
             <div><label htmlFor="s-fecha">Fecha</label><input id="s-fecha" type="date" value={sFecha} onChange={(e) => setSFecha(e.target.value)} /></div>
           </div>
-          <div className="center"><button className="btn ghost sm" type="button" onClick={guardarSaldo}>Guardar saldo</button></div>
-          <p className="hint">AFORE y PPR se actualizan a mano con el estado de cuenta; IBKR se actualiza solo al subir el CSV.</p>
+          <div className="center">
+            <button className="btn ghost sm" type="button" onClick={guardarSaldo}>Guardar saldo</button>
+            {initial.flexHoy && <button className="btn sm" type="button" style={{ marginLeft: 8 }} onClick={() => traerFlex(true)} disabled={busy}>⟳ Actualizar NAV de hoy (IBKR)</button>}
+          </div>
+          <p className="hint">AFORE y PPR se actualizan a mano con el estado de cuenta. IBKR: {initial.flexHoy ? "el botón trae el NAV al día desde IBKR (query Month to Date) y guarda el mes en curso como parcial." : initial.flex ? "se actualiza al traer el mes; para el NAV de hoy agrega IBKR_FLEX_QUERY_MTD (query Month to Date)." : "se actualiza al subir el CSV."}</p>
         </div>
         <div className="card">
           <div className="ct">Net worth personal · hoy</div>
