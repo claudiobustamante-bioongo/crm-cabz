@@ -75,12 +75,13 @@ export async function loadIngresos(supabase: SupabaseClient, anio: number): Prom
 }
 
 export async function loadInversiones(supabase: SupabaseClient): Promise<InversionesData> {
-  const [cuentas, filas, tc, saldos, nw] = await Promise.all([
-    supabase.from("cuentas").select("id,nombre,tipo,moneda,activa,titular_id,pagadores!cuentas_titular_id_fkey(codigo)").eq("activa", true).in("tipo", ["inversion", "retiro"]).order("nombre"),
+  const [cuentas, filas, tc, saldos, nw, ledger] = await Promise.all([
+    supabase.from("cuentas").select("id,nombre,tipo,moneda,activa,titular_id,es_medio_pago,pagadores!cuentas_titular_id_fkey(codigo)").eq("activa", true).in("tipo", ["inversion", "retiro", "cheques"]).eq("es_medio_pago", false).order("nombre"),
     supabase.from("ibkr_estados_mensuales").select("id,cuenta_id,periodo,real_etf,real_acc,real_opc,real_fx,real_bono,nr_etf,nr_acc,nr_opc,nr_fx,nr_bono,div_bruto,div_ret,cupon,cupon_ret,comisiones,int_broker,depositos,nav_efe,nav_acc,nav_opc,nav_bono,nav_dev,nav_final,fuente").order("periodo").range(0, 4999),
     supabase.from("tipos_cambio").select("fecha,moneda,tc_mxn,fuente").eq("moneda", "USD").order("fecha"),
     supabase.from("v_saldo_actual").select("cuenta_id,fecha,saldo,fuente"),
     supabase.from("v_net_worth").select("*").maybeSingle(),
+    supabase.from("v_saldo_cuentas").select("id,saldo"),
   ]);
   type CRow = { id: string; nombre: string; tipo: string; moneda: string; pagadores: { codigo: string } | { codigo: string }[] | null };
   const cs = must<CRow[]>(cuentas, "cuentas").map((c) => ({ ...c, titular: (Array.isArray(c.pagadores) ? c.pagadores[0]?.codigo : c.pagadores?.codigo) ?? "" }));
@@ -92,6 +93,10 @@ export async function loadInversiones(supabase: SupabaseClient): Promise<Inversi
     filas: ibkrRows,
     tc: must<TipoCambio[]>(tc, "tipos_cambio").map((t) => ({ ...t, tc_mxn: Number(t.tc_mxn) })),
     retiro: cs.map((c) => {
+      if (c.tipo === "cheques") {   // cuenta de cheques sin movimientos: saldo contable (saldo_inicial a la fecha)
+        const l = must<{ id: string; saldo: number }[]>(ledger, "saldos").find((x) => x.id === c.id);
+        return { id: c.id, nombre: c.nombre, tipo: c.tipo, moneda: c.moneda, titular: c.titular, saldo: l ? Number(l.saldo) : null, fecha: null, fuente: "saldo contable" };
+      }
       const s = sal.find((x) => x.cuenta_id === c.id);
       // respaldo: si hay un mes de IBKR más nuevo que el último saldo guardado, manda el NAV de ese mes
       const ult = (ibkrRows as IbkrMes[]).filter((r) => r.cuenta_id === c.id).sort((a, b) => b.periodo.localeCompare(a.periodo))[0];

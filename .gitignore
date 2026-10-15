@@ -42,3 +42,4 @@ next-env.d.ts
 supabase/03_seed_personal.sql
 supabase/05_carga_2026.sql
 prototipo/
+supabase/08_revolut_usd.sql

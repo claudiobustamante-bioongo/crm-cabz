@@ -149,7 +149,11 @@ export function Inversiones({ initial }: { initial: InversionesData }) {
   const [sSaldo, setSSaldo] = useState(""); const [sFecha, setSFecha] = useState(hoy());
   const guardarSaldo = async () => {
     const v = Number(sSaldo); if (!v || !sCta) return;
-    const { error } = await supabase.from("saldos_cuenta").upsert({ cuenta_id: sCta, fecha: sFecha, saldo: v, fuente: "captura manual" }, { onConflict: "cuenta_id,fecha" });
+    const cta = retiro.find((x) => x.id === sCta);
+    // cheques (p. ej. Revolut USD): el saldo es el saldo_inicial a la fecha; retiro: historial en saldos_cuenta
+    const { error } = cta?.tipo === "cheques"
+      ? await supabase.from("cuentas").update({ saldo_inicial: v, fecha_saldo_inicial: sFecha }).eq("id", sCta)
+      : await supabase.from("saldos_cuenta").upsert({ cuenta_id: sCta, fecha: sFecha, saldo: v, fuente: "captura manual" }, { onConflict: "cuenta_id,fecha" });
     if (error) return aviso("No se guardó: " + error.message);
     setRetiro((p) => p.map((x) => (x.id === sCta ? { ...x, saldo: v, fecha: sFecha, fuente: "captura manual" } : x)));
     setSSaldo(""); aviso("Saldo actualizado. El net worth se recalcula al recargar.");
@@ -274,7 +278,7 @@ export function Inversiones({ initial }: { initial: InversionesData }) {
               <span className="r"><b style={{ color: "var(--ink)" }}>{c.saldo == null ? "—" : c.moneda === "USD" ? usd(c.saldo) : fmt(c.saldo)}</b></span></div>
           ))}
           <div className="g3" style={{ marginTop: 8 }}>
-            <div><label htmlFor="s-cta">Actualizar</label><select id="s-cta" value={sCta} onChange={(e) => setSCta(e.target.value)}>{retiro.filter((c) => c.tipo === "retiro").map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}</select></div>
+            <div><label htmlFor="s-cta">Actualizar</label><select id="s-cta" value={sCta} onChange={(e) => setSCta(e.target.value)}>{retiro.filter((c) => c.tipo !== "inversion").map((c) => <option key={c.id} value={c.id}>{c.nombre}{c.moneda !== "MXN" ? ` (${c.moneda})` : ""}</option>)}</select></div>
             <div><label htmlFor="s-saldo">Saldo</label><input id="s-saldo" type="number" inputMode="decimal" value={sSaldo} onChange={(e) => setSSaldo(e.target.value)} /></div>
             <div><label htmlFor="s-fecha">Fecha</label><input id="s-fecha" type="date" value={sFecha} onChange={(e) => setSFecha(e.target.value)} /></div>
           </div>
@@ -282,7 +286,7 @@ export function Inversiones({ initial }: { initial: InversionesData }) {
             <button className="btn ghost sm" type="button" onClick={guardarSaldo}>Guardar saldo</button>
             {initial.flexHoy && <button className="btn sm" type="button" style={{ marginLeft: 8 }} onClick={() => traerFlex(true)} disabled={busy}>⟳ Actualizar NAV de hoy (IBKR)</button>}
           </div>
-          <p className="hint">AFORE y PPR se actualizan a mano con el estado de cuenta. IBKR: {initial.flexHoy ? "el botón trae el NAV al día desde IBKR (query Month to Date) y guarda el mes en curso como parcial." : initial.flex ? "se actualiza al traer el mes; para el NAV de hoy agrega IBKR_FLEX_QUERY_MTD (query Month to Date)." : "se actualiza al subir el CSV."}</p>
+          <p className="hint">AFORE, PPR y cuentas en el extranjero se actualizan a mano con el estado de cuenta (en su moneda). IBKR: {initial.flexHoy ? "el botón trae el NAV al día desde IBKR (query Month to Date) y guarda el mes en curso como parcial." : initial.flex ? "se actualiza al traer el mes; para el NAV de hoy agrega IBKR_FLEX_QUERY_MTD (query Month to Date)." : "se actualiza al subir el CSV."}</p>
         </div>
         <div className="card">
           <div className="ct">Net worth personal · hoy</div>
