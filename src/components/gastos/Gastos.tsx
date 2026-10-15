@@ -86,15 +86,20 @@ export function Gastos({ initial }: { initial: GastosData }) {
     setBusy(true);
     try {
       const [y, m0] = [+g.fecha.slice(0, 4), +g.fecha.slice(5, 7)];
-      const dia = g.fecha.slice(8, 10);
-      const fechas = g.repetir
-        ? Array.from({ length: 13 - m0 }, (_, i) => `${y}-${String(m0 + i).padStart(2, "0")}-${dia}`)
-        : [g.fecha];
+      const dia = +g.fecha.slice(8, 10);
+      // fecha del mes i a partir de la compra (si el día no existe en ese mes, usa el último)
+      const fechaMes = (i: number) => { const d = new Date(Date.UTC(y, m0 - 1 + i, 1)); const ult = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate(); return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(Math.min(dia, ult)).padStart(2, "0")}`; };
+      const n = g.msi > 0 ? g.msi : g.repetir ? 13 - m0 : 1;
+      const fechas = Array.from({ length: n }, (_, i) => fechaMes(i));
+      const cuota = g.msi > 0 ? Math.round((g.monto / g.msi) * 100) / 100 : g.monto;
       const ids: string[] = [];
       for (const [i, f] of fechas.entries()) {
+        const monto = g.msi > 0 && i === n - 1 ? Math.round((g.monto - cuota * (n - 1)) * 100) / 100 : cuota;   // la última absorbe el redondeo
+        const notaMsi = g.msi > 0 ? `MSI ${i + 1}/${g.msi} · total ${fmt(g.monto)}` : "";
         const p = {
-          fecha: f, tipo: "gasto", descripcion: g.rubro.nombre, monto: g.monto, cuenta_id: g.cuenta.id, rubro_id: g.rubro.id,
-          evento_id: g.evento, notas: g.nota || null, estado: i === 0 ? "real" : "presupuesto",
+          fecha: f, tipo: "gasto", descripcion: g.rubro.nombre, monto, cuenta_id: g.cuenta.id, rubro_id: g.rubro.id,
+          evento_id: g.evento, notas: [g.nota, notaMsi].filter(Boolean).join(" · ") || null,
+          estado: g.repetir && i > 0 ? "presupuesto" : "real",
           asignaciones: [{ libro: g.libro, pagador: g.pagador, porcentaje: 100 }],
         };
         const { data, error } = await supabase.rpc("registrar_movimiento", { p });
@@ -103,7 +108,7 @@ export function Gastos({ initial }: { initial: GastosData }) {
       }
       await refetchMov(ids);
       setFmes(mesKey(g.fecha)); setSelCat(g.grupo.nombre);
-      aviso(`${g.rubro.nombre} ${fmt(g.monto)} → ${g.grupo.nombre} (${g.cuenta.nombre})${fechas.length > 1 ? ` · ${fechas.length} meses` : ""}`);
+      aviso(`${g.rubro.nombre} ${fmt(g.monto)} → ${g.grupo.nombre} (${g.cuenta.nombre})${g.msi > 0 ? ` · ${g.msi} MSI de ${fmt(cuota)}` : fechas.length > 1 ? ` · ${fechas.length} meses` : ""}`);
       if (+g.fecha.slice(0, 4) !== initial.anio) router.push(`/gastos?anio=${g.fecha.slice(0, 4)}`);
     } catch (e) {
       aviso("No se guardó: " + (e as Error).message);

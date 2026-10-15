@@ -14,6 +14,7 @@ export interface NuevoGasto {
   evento: string | null;
   nota: string;
   repetir: boolean;      // resto del año como presupuesto
+  msi: number;           // meses sin intereses (0 = no aplica); monto = total de la compra
 }
 
 interface Props {
@@ -46,6 +47,7 @@ export function Formulario({ rubros, cuentas, libros, pagadores, eventos, busy, 
   const [libro, setLibro] = useState("");       // '' = automático
   const [pagador, setPagador] = useState("CABZ");
   const [repetir, setRepetir] = useState(false);
+  const [msi, setMsi] = useState(0);          // 0 = una vez
   const [nuevo, setNuevo] = useState<null | "grupo" | "sub">(null);
   const [nuevoNombre, setNuevoNombre] = useState("");
   const [nuevoCls, setNuevoCls] = useState<Clasificacion>("G");
@@ -80,8 +82,8 @@ export function Formulario({ rubros, cuentas, libros, pagadores, eventos, busy, 
     const cuenta = medios.find((c) => c.id === cuentaId);
     if (!cuenta) { setMsg("Elige con qué pagaste."); return; }
     setMsg("");
-    await onAgregar({ fecha, grupo, rubro, monto: m, cuenta, libro: libroEf, pagador, evento: eventoId || null, nota: nota.trim(), repetir });
-    setMonto(""); setNota(""); setRepetir(false);
+    await onAgregar({ fecha, grupo, rubro, monto: m, cuenta, libro: libroEf, pagador, evento: eventoId || null, nota: nota.trim(), repetir, msi });
+    setMonto(""); setNota(""); setRepetir(false); setMsi(0);
   };
 
   return (
@@ -172,9 +174,17 @@ export function Formulario({ rubros, cuentas, libros, pagadores, eventos, busy, 
       </div>
 
       <div className="pills">
-        <button type="button" className="pill" aria-pressed={!repetir} onClick={() => setRepetir(false)}>Una vez</button>
-        <button type="button" className="pill" aria-pressed={repetir} onClick={() => setRepetir(true)}>Se repite cada mes <span className="h">(resto del año como presupuesto)</span></button>
+        <button type="button" className="pill" aria-pressed={!repetir && !msi} onClick={() => { setRepetir(false); setMsi(0); }}>Una vez</button>
+        <button type="button" className="pill" aria-pressed={repetir} onClick={() => { setRepetir(true); setMsi(0); }}>Se repite cada mes <span className="h">(resto del año como presupuesto)</span></button>
+        <button type="button" className="pill" aria-pressed={msi > 0} onClick={() => { setRepetir(false); setMsi(msi || 12); }}>A meses sin intereses</button>
+        {msi > 0 && (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+            <input type="number" min={2} max={48} value={msi} onChange={(e) => setMsi(Math.max(2, +e.target.value || 2))} style={{ width: 64, padding: "5px 8px", fontSize: 13 }} aria-label="Número de meses" /> meses
+            {Number(monto) > 0 && <span className="h">→ {(Number(monto) / msi).toLocaleString("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 0 })}/mes</span>}
+          </span>
+        )}
       </div>
+      {msi > 0 && <p className="hint">Escribe el <b>total de la compra</b>; se registran {msi} cargos mensuales iguales a partir de la fecha, cada uno en su mes (como caen en la tarjeta).</p>}
       {msg && <div className="err" role="alert">{msg}</div>}
       <div className="center"><button className="btn" type="button" onClick={agregar} disabled={busy}>+ Agregar gasto</button></div>
       <p className="hint" style={{ textAlign: "center" }}>Se guarda en Supabase al instante vía <code>registrar_movimiento</code>. Akela, Bioongo y Periplo se cargan a su libro automáticamente.</p>
