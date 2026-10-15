@@ -86,11 +86,22 @@ export async function loadInversiones(supabase: SupabaseClient): Promise<Inversi
   const cs = must<CRow[]>(cuentas, "cuentas").map((c) => ({ ...c, titular: (Array.isArray(c.pagadores) ? c.pagadores[0]?.codigo : c.pagadores?.codigo) ?? "" }));
   const sal = must<{ cuenta_id: string; fecha: string; saldo: number; fuente: string }[]>(saldos, "saldos");
   const num = (r: Record<string, unknown>) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, typeof v === "string" && /^-?\d+(\.\d+)?$/.test(v) ? Number(v) : v]));
+  const ibkrRows = must<Record<string, unknown>[]>(filas, "ibkr").map(num) as unknown as IbkrMes[];
   return {
     cuentasIbkr: cs.filter((c) => c.tipo === "inversion").map((c) => ({ id: c.id, nombre: c.nombre, titular: c.titular })),
-    filas: must<Record<string, unknown>[]>(filas, "ibkr").map(num) as unknown as IbkrMes[],
+    filas: ibkrRows,
     tc: must<TipoCambio[]>(tc, "tipos_cambio").map((t) => ({ ...t, tc_mxn: Number(t.tc_mxn) })),
-    retiro: cs.map((c) => { const s = sal.find((x) => x.cuenta_id === c.id); return { id: c.id, nombre: c.nombre, tipo: c.tipo, moneda: c.moneda, titular: c.titular, saldo: s ? Number(s.saldo) : null, fecha: s?.fecha ?? null, fuente: s?.fuente ?? null }; }),
+    retiro: cs.map((c) => {
+      const s = sal.find((x) => x.cuenta_id === c.id);
+      // respaldo: si hay un mes de IBKR más nuevo que el último saldo guardado, manda el NAV de ese mes
+      const ult = (ibkrRows as IbkrMes[]).filter((r) => r.cuenta_id === c.id).sort((a, b) => b.periodo.localeCompare(a.periodo))[0];
+      const finMes = ult ? new Date(Date.UTC(+ult.periodo.slice(0, 4), +ult.periodo.slice(5, 7), 0)).toISOString().slice(0, 10) : null;
+      const usarIbkr = !!ult && (!s || (finMes! > s.fecha));
+      return { id: c.id, nombre: c.nombre, tipo: c.tipo, moneda: c.moneda, titular: c.titular,
+        saldo: usarIbkr ? Number(ult!.nav_final) : s ? Number(s.saldo) : null,
+        fecha: usarIbkr ? finMes : s?.fecha ?? null,
+        fuente: usarIbkr ? `IBKR · ${ult!.fuente ?? "estado de cuenta"}` : s?.fuente ?? null };
+    }),
     netWorth: nw.data ? (num(nw.data as Record<string, unknown>) as unknown as NetWorth) : null,
     banxico: !!process.env.BANXICO_TOKEN,
     flex: !!(process.env.IBKR_FLEX_TOKEN && process.env.IBKR_FLEX_QUERY_ID),

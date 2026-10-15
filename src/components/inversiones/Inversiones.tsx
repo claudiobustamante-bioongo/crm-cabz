@@ -133,7 +133,8 @@ export function Inversiones({ initial }: { initial: InversionesData }) {
         };
         const { data: saved, error: e1 } = await supabase.from("ibkr_estados_mensuales").upsert(row, { onConflict: "cuenta_id,periodo" }).select("*").single();
         if (e1) throw e1;
-        await supabase.from("saldos_cuenta").upsert({ cuenta_id: c.id, fecha: finMes(r.year, r.mes), saldo: r.nav_tot, fuente: "IBKR estado de cuenta" }, { onConflict: "cuenta_id,fecha" });
+        const { error: e2 } = await supabase.from("saldos_cuenta").upsert({ cuenta_id: c.id, fecha: finMes(r.year, r.mes), saldo: r.nav_tot, fuente: "IBKR estado de cuenta" }, { onConflict: "cuenta_id,fecha" });
+        if (e2) aviso("Mes guardado, pero el saldo no: " + e2.message);
         const num = Object.fromEntries(Object.entries(saved as Record<string, unknown>).map(([k, v]) => [k, typeof v === "string" && /^-?\d+(\.\d+)?$/.test(v) ? Number(v) : v])) as unknown as IbkrMes;
         setFilas((p) => [...p.filter((x) => !(x.cuenta_id === c.id && x.periodo === periodo)), num]);
         setRetiro((p) => p.map((x) => (x.id === c.id ? { ...x, saldo: r.nav_tot, fecha: finMes(r.year!, r.mes!), fuente: "IBKR estado de cuenta" } : x)));
