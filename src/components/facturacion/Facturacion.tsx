@@ -16,7 +16,7 @@ export function Facturacion({ initial, vista = "resumen" }: { initial: Facturaci
   const base = vista === "detalle" ? "/facturacion/detalle" : "/facturacion";
   const router = useRouter();
   const supabase = createClient();
-  const [cfdis, setCfdis] = useState<Cfdi[]>(initial.cfdis);
+  const [cfdis, setCfdis] = useState<Cfdi[]>(initial.cfdis.filter((c) => c.tipo !== "emitida"));
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState("");
   const [ftipo, setFtipo] = useState(""); const [fmes, setFmes] = useState(""); const [festado, setFestado] = useState(""); const [q, setQ] = useState("");
@@ -119,6 +119,8 @@ export function Facturacion({ initial, vista = "resumen" }: { initial: Facturaci
     if (error || !data) return aviso("No se pudo abrir el archivo.");
     window.open(data.signedUrl, "_blank");
   };
+  /** Abre el archivo en Drive; si la factura no tiene link, abre la búsqueda de Drive por UUID para encontrarlo y pegarlo. */
+  const drive = (c: Cfdi) => window.open(c.link_drive || `https://drive.google.com/drive/search?q=${encodeURIComponent(c.uuid.toUpperCase())}`, "_blank");
   const borrar = async (c: Cfdi) => {
     if (!confirm(`¿Borrar la factura ${c.emisor_nombre ?? c.emisor_rfc} ${fmt2(c.total)}? Se desliga del gasto (el gasto se queda).`)) return;
     if (c.movimiento_id) await supabase.from("movimientos").update({ cfdi_uuid: null, tiene_cfdi: false }).eq("id", c.movimiento_id);
@@ -203,31 +205,28 @@ export function Facturacion({ initial, vista = "resumen" }: { initial: Facturaci
       <div className="stat-row">
         <div className="stat"><div className="v">{cfdis.length}</div><div className="l">CFDI {initial.anio}</div></div>
         <div className="stat"><div className="v">{fmt(tot("recibida"))}</div><div className="l">Recibidas · {cfdis.filter((c) => c.tipo === "recibida").length}</div></div>
-        <div className="stat"><div className="v">{fmt(tot("emitida"))}</div><div className="l">Emitidas · {cfdis.filter((c) => c.tipo === "emitida").length}</div></div>
-        <div className="stat"><div className="v">{fmt(tot("nomina"))}</div><div className="l">Nómina · {cfdis.filter((c) => c.tipo === "nomina").length}</div></div>
+                <div className="stat"><div className="v">{fmt(tot("nomina"))}</div><div className="l">Nómina · {cfdis.filter((c) => c.tipo === "nomina").length}</div></div>
         <div className="stat"><div className={"v" + (sinRubro ? " neg" : "")}>{sinRubro}</div><div className="l">Recibidas sin rubro</div></div>
       </div>
 
       <div className="card">
         <div className="ct"><span>Resumen mensual · {initial.anio}</span><Link href={`/facturacion/detalle?anio=${initial.anio}`} className="btn ghost sm">Ver detalle (todas las columnas) →</Link></div>
         <div className="tbl"><table>
-          <thead><tr><th>Mes</th><th className="n">Recibidas</th><th className="n">Total recibidas</th><th className="n">IVA acreditable</th><th className="n">Emitidas</th><th className="n">Total emitidas</th><th className="n">Ret. ISR</th><th className="n">Ret. IVA</th><th className="n">Nómina</th><th className="n">Sin rubro</th></tr></thead>
+          <thead><tr><th>Mes</th><th className="n">Recibidas</th><th className="n">Total recibidas</th><th className="n">IVA acreditable</th><th className="n">Nómina</th><th className="n">Sin rubro</th></tr></thead>
           <tbody>
             {mesesRes.map((m) => (
               <tr key={m}><td>{ml(m)}</td>
                 <td className="n">{cel(m, "recibida", "facturas") || "·"}</td><td className="n">{fmt(cel(m, "recibida", "total_mxn"))}</td><td className="n">{fmt(cel(m, "recibida", "iva"))}</td>
-                <td className="n">{cel(m, "emitida", "facturas") || "·"}</td><td className="n">{fmt(cel(m, "emitida", "total_mxn"))}</td><td className="n">{fmt(cel(m, "emitida", "ret_isr"))}</td><td className="n">{fmt(cel(m, "emitida", "ret_iva"))}</td>
                 <td className="n">{fmt(cel(m, "nomina", "total_mxn"))}</td>
                 <td className={"n" + (sinRubroMes(m) ? " neg" : "")}>{sinRubroMes(m) || "·"}</td></tr>
             ))}
-            {!mesesRes.length && <tr><td colSpan={10} className="hint">Sin facturas en {initial.anio}. Sube los XML arriba.</td></tr>}
+            {!mesesRes.length && <tr><td colSpan={6} className="hint">Sin facturas en {initial.anio}. Sube los XML arriba.</td></tr>}
             {mesesRes.length > 0 && <tr className="tot"><td>Año</td>
               <td className="n">{cel("", "recibida", "facturas")}</td><td className="n">{fmt(cel("", "recibida", "total_mxn"))}</td><td className="n">{fmt(cel("", "recibida", "iva"))}</td>
-              <td className="n">{cel("", "emitida", "facturas")}</td><td className="n">{fmt(cel("", "emitida", "total_mxn"))}</td><td className="n">{fmt(cel("", "emitida", "ret_isr"))}</td><td className="n">{fmt(cel("", "emitida", "ret_iva"))}</td>
               <td className="n">{fmt(cel("", "nomina", "total_mxn"))}</td><td className="n">{sinRubro}</td></tr>}
           </tbody>
         </table></div>
-        <p className="hint">Totales en MXN al tipo de cambio de la factura. IVA acreditable y retenciones son lo que tu contador necesita cada mes.</p>
+        <p className="hint">Solo facturas que recibes (gastos y nómina); las que emites viven en Ingresos. Totales en MXN al tipo de cambio de la factura.</p>
       </div>
       {initial.extranjeras.length > 0 && (
         <div className="card">
@@ -280,15 +279,14 @@ export function Facturacion({ initial, vista = "resumen" }: { initial: Facturaci
       <div className="stat-row">
         <div className="stat"><div className="v">{cfdis.length}</div><div className="l">CFDI {initial.anio}</div></div>
         <div className="stat"><div className="v">{fmt(tot("recibida"))}</div><div className="l">Recibidas · {cfdis.filter((c) => c.tipo === "recibida").length}</div></div>
-        <div className="stat"><div className="v">{fmt(tot("emitida"))}</div><div className="l">Emitidas · {cfdis.filter((c) => c.tipo === "emitida").length}</div></div>
-        <div className="stat"><div className="v">{fmt(tot("nomina"))}</div><div className="l">Nómina · {cfdis.filter((c) => c.tipo === "nomina").length}</div></div>
+                <div className="stat"><div className="v">{fmt(tot("nomina"))}</div><div className="l">Nómina · {cfdis.filter((c) => c.tipo === "nomina").length}</div></div>
         <div className="stat"><div className={"v" + (sinRubro ? " neg" : "")}>{sinRubro}</div><div className="l">Recibidas sin rubro</div></div>
       </div>
 
       <div className="card">
         <div className="ct"><span>Detalle de facturas</span><span className="tag">{lista.length} de {cfdis.length} · <button className="link" type="button" onClick={exportar}>exportar CSV</button></span></div>
         <div className="g3" style={{ marginBottom: 8 }}>
-          <div><label htmlFor="f-tipo">Tipo</label><select id="f-tipo" value={ftipo} onChange={(e) => setFtipo(e.target.value)}><option value="">Todas</option><option value="recibida">Recibidas</option><option value="emitida">Emitidas</option><option value="nomina">Nómina</option></select></div>
+          <div><label htmlFor="f-tipo">Tipo</label><select id="f-tipo" value={ftipo} onChange={(e) => setFtipo(e.target.value)}><option value="">Todas</option><option value="recibida">Recibidas</option><option value="nomina">Nómina</option></select></div>
           <div><label htmlFor="f-mes">Mes</label><select id="f-mes" value={fmes} onChange={(e) => setFmes(e.target.value)}><option value="">Todos</option>{meses.map((k) => <option key={k} value={k}>{ml(k)}</option>)}</select></div>
           <div><label htmlFor="f-est">Estado</label><select id="f-est" value={festado} onChange={(e) => setFestado(e.target.value)}><option value="">Todos</option>{(Object.keys(ESTADO) as Cfdi["estado"][]).map((k) => <option key={k} value={k}>{ESTADO[k][0]}</option>)}</select></div>
         </div>
@@ -324,7 +322,7 @@ export function Facturacion({ initial, vista = "resumen" }: { initial: Facturaci
                   {c.estado !== "ligada" && c.tipo === "recibida" && <><button className="link" type="button" onClick={() => setCreando(c)}>Crear gasto</button> · </>}
                   {c.estado === "ligada" && <><button className="link" type="button" onClick={() => desligar(c)}>Desligar</button> · </>}
                   {c.estado === "nueva" && <><button className="link" type="button" onClick={() => setEstado(c, "sin_gasto")}>Sin gasto</button> · </>}
-                  <button className="link" type="button" onClick={() => abrir(c.xml_path)}>XML</button>{c.pdf_path && <> · <button className="link" type="button" onClick={() => abrir(c.pdf_path)}>PDF</button></>}
+                  <button className="link" type="button" onClick={() => abrir(c.xml_path)}>XML</button>{c.pdf_path && <> · <button className="link" type="button" onClick={() => abrir(c.pdf_path)}>PDF</button></>} · <button className="link" type="button" title={c.link_drive ? "Abrir en Drive" : "Buscar en Drive por UUID"} onClick={() => drive(c)}>{c.link_drive ? "Drive ↗" : "Drive ?"}</button>
                   {" "}<button className="del" type="button" aria-label="Borrar" onClick={() => borrar(c)}>✕</button>
                 </td>
               </tr>
@@ -332,7 +330,7 @@ export function Facturacion({ initial, vista = "resumen" }: { initial: Facturaci
             {!lista.length && <tr><td colSpan={30} className="hint">Sin facturas{cfdis.length ? " con esos filtros" : " en " + initial.anio}.</td></tr>}
           </tbody>
         </table></div>
-        <p className="hint">Vencimiento, link de Drive y notas se editan en la celda (se guardan al salir). Confianza «alta (XML)» = leída del XML timbrado.</p>
+        <p className="hint">«Drive ↗» abre el archivo; «Drive ?» busca el UUID en tu Drive para que pegues el link en la celda. Vencimiento, link y notas se editan en la celda (se guardan al salir). Confianza «alta (XML)» = leída del XML timbrado.</p>
       </div>
       {creando && (
         <div className="card">

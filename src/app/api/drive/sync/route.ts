@@ -46,7 +46,10 @@ async function sync(db: SupabaseClient, userId: string, rfc: string | null) {
       const xml = Buffer.from(await download(file.id)).toString("utf8");
       const p = parseCfdiServer(xml, rfc);
       uuidPorStem.set(stemDe(file.name), p.uuid);
-      if (existentes.has(p.uuid)) { await log(file, path, "omitido", { detalle: "UUID ya registrado", cfdi_uuid: p.uuid, mes: p.fecha.slice(0, 7) + "-01" }); res.duplicados++; continue; }
+      if (existentes.has(p.uuid)) {   // ya estaba (subida a mano): solo le pone el link de Drive si no tenía
+        if (file.webViewLink) await db.from("cfdi").update({ link_drive: file.webViewLink }).eq("uuid", p.uuid).is("link_drive", null);
+        await log(file, path, "omitido", { detalle: "UUID ya registrado", cfdi_uuid: p.uuid, mes: p.fecha.slice(0, 7) + "-01" }); res.duplicados++; continue;
+      }
       const base = `${userId}/cfdi/${p.fecha.slice(0, 4)}/${p.uuid}`;
       const up = await db.storage.from("documentos").upload(`${base}.xml`, Buffer.from(xml, "utf8"), { contentType: "text/xml", upsert: true });
       if (up.error) throw up.error;
@@ -83,6 +86,7 @@ async function sync(db: SupabaseClient, userId: string, rfc: string | null) {
           if (up.error) throw up.error;
           const { data: dp } = await db.from("documentos").upsert({ user_id: userId, nombre: file.name, storage_path: `${base}.pdf`, mime: "application/pdf", tamano_bytes: bytes.length, categoria: "cfdi", fecha_documento: c.fecha }, { onConflict: "storage_path" }).select("id").single();
           await db.from("cfdi").update({ pdf_documento_id: dp?.id ?? null }).eq("uuid", uuid);
+          if (file.webViewLink) await db.from("cfdi").update({ link_drive: file.webViewLink }).eq("uuid", uuid).is("link_drive", null);
           await log(file, path, "pdf_cfdi", { cfdi_uuid: uuid, documento_id: dp?.id ?? null, mes: String(c.fecha).slice(0, 7) + "-01" });
         } else await log(file, path, "omitido", { detalle: "el CFDI ya tiene PDF", cfdi_uuid: uuid });
         res.pdf++;
