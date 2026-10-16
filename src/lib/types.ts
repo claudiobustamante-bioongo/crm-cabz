@@ -167,7 +167,9 @@ export interface CfdiMensual { anio: number; mes: string; tipo: string; facturas
 /** Gasto sin CFDI, candidato a ligar. */
 export interface GastoSinCfdi { id: string; fecha: string; descripcion: string; grupo: string; rubro: string; rubro_id: string | null; cuenta: string; monto_mxn: number }
 
-export interface DeduccionAnual { anio: number; categoria: string; registrado: number; con_comprobante: number | null; movimientos: number; sin_cfdi: number }
+export interface DeduccionAnual { anio: number; categoria: string; registrado: number; con_comprobante: number; movimientos: number; facturas: number }
+
+export interface FacturaExt { drive_id: string; nombre: string; carpeta: string | null; mes: string | null; link_drive: string | null; procesado_en: string; storage_path: string | null }
 
 export interface FacturacionData {
   anio: number;
@@ -180,6 +182,9 @@ export interface FacturacionData {
   cuentas: Cuenta[];
   deducciones: DeduccionAnual[];
   mensual: CfdiMensual[];
+  extranjeras: FacturaExt[];
+  drive: boolean;         // hay cuenta de servicio + carpeta configuradas
+  ultimaSync: string | null;
   ingresoAnual: number;   // sueldo + bono + honorarios brutos del año (base para topes)
   uma: number;            // UMA diaria vigente
 }

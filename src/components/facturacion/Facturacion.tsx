@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-import type { Cfdi, FacturacionData, GastoSinCfdi } from "@/lib/types";
+import type { Cfdi, FacturacionData } from "@/lib/types";
 import { fmt, fmt2, mesKey, ml } from "@/lib/format";
 import { parseCfdi, FORMA_PAGO } from "@/lib/cfdi";
 
@@ -17,11 +17,9 @@ export function Facturacion({ initial, vista = "resumen" }: { initial: Facturaci
   const router = useRouter();
   const supabase = createClient();
   const [cfdis, setCfdis] = useState<Cfdi[]>(initial.cfdis);
-  const [sinCfdi, setSinCfdi] = useState<GastoSinCfdi[]>(initial.sinCfdi);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState("");
   const [ftipo, setFtipo] = useState(""); const [fmes, setFmes] = useState(""); const [festado, setFestado] = useState(""); const [q, setQ] = useState("");
-  const [ligando, setLigando] = useState<Cfdi | null>(null);
   const [creando, setCreando] = useState<Cfdi | null>(null);
   const [cCuenta, setCCuenta] = useState(initial.cuentas.find((c) => c.nombre === "AMEX")?.id ?? initial.cuentas[0]?.id ?? "");
   const aviso = (t: string) => { setToast(t); setTimeout(() => setToast(""), 4500); };
@@ -73,21 +71,20 @@ export function Facturacion({ initial, vista = "resumen" }: { initial: Facturaci
     } finally { setBusy(false); }
   };
 
-  /* ---------- ligar / crear / rubro / estado ---------- */
+  const sincronizar = async () => {
+    setBusy(true);
+    try {
+      const r = await fetch("/api/drive/sync", { method: "POST" }); const j = await r.json();
+      if (!r.ok) throw new Error(j.error || r.statusText);
+      aviso(`Drive: ${j.cfdi} CFDI, ${j.pdf} PDF anexos, ${j.extranjeras} extranjeras, ${j.duplicados} repetidas, ${j.errores} errores${j.pendientes ? ` · faltan ${j.pendientes}, vuelve a pulsar` : ""}.`);
+      setTimeout(() => window.location.reload(), 2500);
+    } catch (e) { aviso("Drive: " + (e as Error).message); } finally { setBusy(false); }
+  };
+
+  /* ---------- crear / rubro / estado ---------- */
   const refrescar = async (uuid: string) => {
     const { data: v } = await supabase.from("v_cfdi").select("*").eq("uuid", uuid).single();
     if (v) setCfdis((prev) => prev.map((c) => (c.uuid === uuid ? (v as Cfdi) : c)));
-  };
-  const ligar = async (c: Cfdi, g: GastoSinCfdi) => {
-    setBusy(true);
-    try {
-      const { error } = await supabase.from("movimientos").update({ cfdi_uuid: c.uuid, tiene_cfdi: true }).eq("id", g.id);
-      if (error) throw error;
-      await supabase.from("cfdi").update({ estado: "ligada", rubro_id: c.rubro_id ?? g.rubro_id }).eq("uuid", c.uuid);
-      setSinCfdi((prev) => prev.filter((x) => x.id !== g.id));
-      await refrescar(c.uuid); setLigando(null);
-      aviso(`Ligada a ${g.rubro} ${fmt(g.monto_mxn)} del ${g.fecha}.`);
-    } catch (e) { aviso("No se ligó: " + (e as Error).message); } finally { setBusy(false); }
   };
   const desligar = async (c: Cfdi) => {
     if (!c.movimiento_id) return;
@@ -137,12 +134,6 @@ export function Facturacion({ initial, vista = "resumen" }: { initial: Facturaci
     && (!q || `${c.emisor_nombre} ${c.receptor_nombre} ${c.concepto} ${c.folio} ${c.uuid}`.toLowerCase().includes(q.toLowerCase())));
   const tot = (t: Cfdi["tipo"]) => cfdis.filter((c) => c.tipo === t).reduce((a, c) => a + c.total, 0);
   const porLigar = cfdis.filter((c) => c.estado === "nueva").length;
-  const candidatos = (c: Cfdi) => {
-    const d = new Date(c.fecha).getTime();
-    return sinCfdi.map((g) => ({ g, dm: Math.abs(g.monto_mxn - c.total), dd: Math.abs(new Date(g.fecha).getTime() - d) / 86400000 }))
-      .filter((x) => x.dm <= Math.max(2, c.total * 0.02) || (x.dd <= 10 && x.dm <= c.total * 0.25))
-      .sort((a, b) => a.dm - b.dm || a.dd - b.dd).slice(0, 8).map((x) => x.g);
-  };
 
   /* ---------- deducciones ---------- */
   const umaAnual = initial.uma * 365, tope5 = umaAnual * 5;
@@ -184,13 +175,23 @@ export function Facturacion({ initial, vista = "resumen" }: { initial: Facturaci
 
       {vista === "resumen" && (<>
       <div className={"card" + (busy ? " spin" : "")}>
-        <div className="ct"><span>Subir facturas</span><span className="tag">{initial.rfcPropio ? `tu RFC: ${initial.rfcPropio}` : "sin RFC propio: todo entra como recibida (corre 11_rfc.sql)"}</span></div>
+        <div className="ct"><span>Facturas desde Drive</span><span className="tag">{initial.rfcPropio ? `tu RFC: ${initial.rfcPropio}` : "sin RFC propio: todo entra como recibida (corre 11_rfc.sql)"}</span></div>
+        <div className="g2">
+          <div>
+            {initial.drive
+              ? <><button className="btn sm" type="button" onClick={sincronizar} disabled={busy}>⟳ Traer de Drive ahora</button>
+                  <p className="hint">Se revisa sola una vez al día; aquí la fuerzas. Última: {initial.ultimaSync ? new Date(initial.ultimaSync).toLocaleString("es-MX", { timeZone: "America/Mexico_City" }) : "nunca"}.</p></>
+              : <p className="hint">Para que lea tu carpeta «01 - Facturas» sola: pon GOOGLE_SERVICE_ACCOUNT_JSON y DRIVE_FACTURAS_FOLDER_ID en Vercel (instrucciones en el chat).</p>}
+          </div>
+          <div>
         <label className="door" htmlFor="f-in" onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add("over"); }} onDragLeave={(e) => e.currentTarget.classList.remove("over")}
           onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove("over"); subir(e.dataTransfer.files); }}>
-          ⬆ Suelta aquí XML y PDF de CFDI (varios a la vez) o haz clic para elegirlos
+          ⬆ O suelta aquí XML y PDF (varios a la vez)
         </label>
         <input id="f-in" type="file" accept=".xml,.pdf" multiple hidden onChange={(e) => { subir(e.target.files); e.target.value = ""; }} />
-        <p className="hint">El PDF se anexa si se llama igual que el XML o contiene el UUID en el nombre. Duplicados por UUID se ignoran. Nómina y emitidas quedan como «sin gasto» (son ingresos).</p>
+          </div>
+        </div>
+        <p className="hint">Mexicanas = XML CFDI (el PDF se anexa si se llama igual o trae el UUID). PDF sin XML = extranjera, catalogada por la carpeta de mes. Duplicados por UUID se ignoran; nómina y emitidas quedan «sin gasto».</p>
       </div>
 
       <div className="g2" style={{ marginBottom: 6 }}>
@@ -226,20 +227,34 @@ export function Facturacion({ initial, vista = "resumen" }: { initial: Facturaci
         </table></div>
         <p className="hint">Totales en MXN al tipo de cambio de la factura. IVA acreditable y retenciones son lo que tu contador necesita cada mes.</p>
       </div>
+      {initial.extranjeras.length > 0 && (
+        <div className="card">
+          <div className="ct"><span>Facturas extranjeras · {initial.anio}</span><span className="tag">{initial.extranjeras.length} PDF sin CFDI, por mes</span></div>
+          <div className="tbl"><table>
+            <thead><tr><th>Mes</th><th>Archivo</th><th>Carpeta en Drive</th><th></th></tr></thead>
+            <tbody>{initial.extranjeras.map((x) => (
+              <tr key={x.drive_id}><td>{x.mes ? ml(x.mes) : "—"}</td><td style={{ whiteSpace: "normal" }}>{x.nombre}</td><td style={{ color: "var(--gray-soft)" }}>{x.carpeta}</td>
+                <td>{x.storage_path && <button className="link" type="button" onClick={() => abrir(x.storage_path)}>PDF</button>}{x.link_drive && <> · <a className="link" href={x.link_drive} target="_blank" rel="noreferrer">Drive</a></>}</td></tr>
+            ))}</tbody>
+          </table></div>
+          <p className="hint">Monto y proveedor de extranjeras se capturarán con lectura por IA del PDF en una sesión posterior.</p>
+        </div>
+      )}
+
       <h2>Deducciones personales · {initial.anio}</h2>
       <div className="g2">
         <div className="card">
           <div className="ct"><span>Gastos médicos y seguros</span><span className="tag">tope: 15 % del ingreso o 5 UMA anuales, lo menor</span></div>
           <div className="tbl"><table>
-            <thead><tr><th>Concepto</th><th className="n">Registrado</th><th className="n">Con CFDI</th><th className="n">Sin CFDI</th></tr></thead>
+            <thead><tr><th>Concepto</th><th className="n">Gastado</th><th className="n">Facturado (CFDI)</th><th className="n">Facturas</th></tr></thead>
             <tbody>
               {generales.filter((k) => ded(k)).map((k) => { const d = ded(k)!; return (
-                <tr key={k}><td style={{ whiteSpace: "normal" }}>{DED_LABEL[k]}</td><td className="n">{fmt(Number(d.registrado))}</td><td className="n pos">{fmt(Number(d.con_comprobante ?? 0))}</td><td className={"n" + (d.sin_cfdi ? " neg" : "")}>{d.sin_cfdi} mov.</td></tr>); })}
+                <tr key={k}><td style={{ whiteSpace: "normal" }}>{DED_LABEL[k]}</td><td className="n">{fmt(Number(d.registrado))}</td><td className="n pos">{fmt(Number(d.con_comprobante ?? 0))}</td><td className="n">{d.facturas}</td></tr>); })}
               {!generales.some((k) => ded(k)) && <tr><td colSpan={4} className="hint">Sin gastos en rubros deducibles este año.</td></tr>}
-              <tr className="tot"><td>Deducible (con CFDI)</td><td className="n">{fmt(regGen)}</td><td className="n">{fmt(deducibleGen)}</td><td className="n">{sumGen > topeGeneral ? "al tope" : ""}</td></tr>
+              <tr className="tot"><td>Deducible</td><td className="n">{fmt(regGen)}</td><td className="n">{fmt(deducibleGen)}</td><td className="n">{sumGen > topeGeneral ? "al tope" : ""}</td></tr>
             </tbody>
           </table></div>
-          <p className="hint">Tope general {fmt(topeGeneral)} (ingreso del año {fmt(initial.ingresoAnual)} × 15 % vs 5 UMA = {fmt(tope5)}). Requiere CFDI a tu nombre y pago con tarjeta, cheque o transferencia. Ahorro fiscal estimado ≈ {fmt(deducibleGen * tasa)} al {Math.round(tasa * 100)} % marginal.</p>
+          <p className="hint">Tope general {fmt(topeGeneral)} (ingreso del año {fmt(initial.ingresoAnual)} × 15 % vs 5 UMA = {fmt(tope5)}). Cuenta lo facturado a tu RFC en rubros deducibles (asigna el rubro a la factura una vez; el emisor se recuerda). Ahorro fiscal estimado ≈ {fmt(deducibleGen * tasa)} al {Math.round(tasa * 100)} % marginal.</p>
         </div>
         <div className="card">
           <div className="ct"><span>PPR / AFORE voluntaria</span><span className="tag">art. 151 fr. V · tope aparte</span></div>
@@ -304,7 +319,7 @@ export function Facturacion({ initial, vista = "resumen" }: { initial: Facturaci
                 <td><input type="text" defaultValue={c.notas ?? ""} onBlur={(e) => e.target.value !== (c.notas ?? "") && editar(c, "notas", e.target.value)} style={{ padding: "3px 5px", fontSize: 12, width: 140 }} /></td>
                 <td><span className="badge" style={{ background: ESTADO[c.estado][1] }}>{ESTADO[c.estado][0]}</span>{c.movimiento && <div style={{ fontSize: 11, color: "var(--gray-soft)", whiteSpace: "normal" }}>{c.movimiento} · {c.cuenta}</div>}</td>
                 <td style={{ whiteSpace: "nowrap" }}>
-                  {c.estado !== "ligada" && c.tipo === "recibida" && <><button className="link" type="button" onClick={() => { setLigando(c); setCreando(null); }}>Ligar</button> · <button className="link" type="button" onClick={() => { setCreando(c); setLigando(null); }}>Crear gasto</button> · </>}
+                  {c.estado !== "ligada" && c.tipo === "recibida" && <><button className="link" type="button" onClick={() => setCreando(c)}>Crear gasto</button> · </>}
                   {c.estado === "ligada" && <><button className="link" type="button" onClick={() => desligar(c)}>Desligar</button> · </>}
                   {c.estado === "nueva" && <><button className="link" type="button" onClick={() => setEstado(c, "sin_gasto")}>Sin gasto</button> · </>}
                   <button className="link" type="button" onClick={() => abrir(c.xml_path)}>XML</button>{c.pdf_path && <> · <button className="link" type="button" onClick={() => abrir(c.pdf_path)}>PDF</button></>}
@@ -317,16 +332,6 @@ export function Facturacion({ initial, vista = "resumen" }: { initial: Facturaci
         </table></div>
         <p className="hint">Vencimiento, link de Drive y notas se editan en la celda (se guardan al salir). Confianza «alta (XML)» = leída del XML timbrado.</p>
       </div>
-      {ligando && (
-        <div className="card">
-          <div className="ct"><span>Ligar {ligando.emisor_nombre ?? ligando.emisor_rfc} · {fmt2(ligando.total)} · {ligando.fecha}</span><button className="btn ghost sm" type="button" onClick={() => setLigando(null)}>Cerrar</button></div>
-          {candidatos(ligando).length === 0 && <p className="hint">No hay gastos sin factura con monto o fecha parecidos. Usa «Crear gasto» si no lo registraste.</p>}
-          {candidatos(ligando).map((g) => (
-            <div key={g.id} className="mov"><span><b style={{ color: "var(--ink)" }}>{g.grupo}</b> · {g.rubro} <span style={{ color: "var(--gray-soft)", fontSize: 12 }}>{g.fecha} · {g.cuenta}</span></span>
-              <span className="r"><b style={{ color: "var(--ink)" }}>{fmt2(g.monto_mxn)}</b><button className="btn sm" type="button" onClick={() => ligar(ligando, g)} disabled={busy}>Ligar</button></span></div>
-          ))}
-        </div>
-      )}
       {creando && (
         <div className="card">
           <div className="ct"><span>Crear gasto desde la factura · {fmt2(creando.total)} · {creando.fecha}</span><button className="btn ghost sm" type="button" onClick={() => setCreando(null)}>Cerrar</button></div>
