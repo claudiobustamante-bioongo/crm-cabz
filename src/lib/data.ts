@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Asignacion, Catalogo, Cfdi, Cuenta, DeduccionAnual, Evento, FacturacionData, GastoSinCfdi, GastosData, IbkrMes, Ingreso, IngresosData, InversionesData, Movimiento, NetWorth, Rubro, TipoCambio } from "./types";
+import type { Asignacion, Catalogo, Cfdi, CfdiMensual, Cuenta, DeduccionAnual, Evento, FacturacionData, GastoSinCfdi, GastosData, IbkrMes, Ingreso, IngresosData, InversionesData, Movimiento, NetWorth, Rubro, TipoCambio } from "./types";
 
 const TIPOS_GASTO = ["gasto", "ahorro", "abono_deuda"];
 
@@ -118,7 +118,7 @@ export const UMA_DIARIA = 113.14;   // 2025–2026; actualizar cada febrero
 
 export async function loadFacturacion(supabase: SupabaseClient, anio: number): Promise<FacturacionData> {
   const desde = `${anio}-01-01`, hasta = `${anio}-12-31`;
-  const [{ data: { user } }, cfg, cfdis, sin, rubros, cuentas, ded, ing, anios] = await Promise.all([
+  const [{ data: { user } }, cfg, cfdis, sin, rubros, cuentas, ded, mensual, ing, anios] = await Promise.all([
     supabase.auth.getUser(),
     supabase.from("app_config").select("rfc_propio").maybeSingle(),
     supabase.from("v_cfdi").select("*").gte("fecha", desde).lte("fecha", hasta).order("fecha", { ascending: false }).range(0, 4999),
@@ -127,6 +127,7 @@ export async function loadFacturacion(supabase: SupabaseClient, anio: number): P
     supabase.from("rubros").select("id,codigo,nombre,padre_id,clasificacion,emoji,activo").eq("naturaleza", "gasto").eq("activo", true).order("orden").order("nombre"),
     supabase.from("cuentas").select("id,nombre,tipo,es_medio_pago").eq("activa", true).eq("es_medio_pago", true).order("nombre"),
     supabase.from("v_deducciones_anual").select("*").eq("anio", anio),
+    supabase.from("v_cfdi_mensual").select("*").eq("anio", anio).order("mes"),
     supabase.from("v_ingresos").select("tipo,monto,bruto,proyectado").gte("fecha", desde).lte("fecha", hasta).in("tipo", ["sueldo", "bono", "comision"]),
     supabase.from("anios").select("anio").order("anio"),
   ]);
@@ -143,6 +144,7 @@ export async function loadFacturacion(supabase: SupabaseClient, anio: number): P
     rubros: must<Rubro[]>(rubros, "rubros"),
     cuentas: must<Cuenta[]>(cuentas, "cuentas"),
     deducciones: must<Record<string, unknown>[]>(ded, "deducciones").map(num) as unknown as DeduccionAnual[],
+    mensual: must<Record<string, unknown>[]>(mensual, "cfdi mensual").map(num) as unknown as CfdiMensual[],
     ingresoAnual, uma: UMA_DIARIA,
   };
 }

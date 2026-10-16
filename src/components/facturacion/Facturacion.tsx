@@ -1,6 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import type { Cfdi, FacturacionData, GastoSinCfdi } from "@/lib/types";
 import { fmt, fmt2, mesKey, ml } from "@/lib/format";
@@ -11,7 +12,8 @@ const TIPO_COLOR = { emitida: "var(--c6)", recibida: "var(--aho)", nomina: "var(
 const ESTADO = { nueva: ["Por ligar", "var(--gus)"], ligada: ["Ligada", "var(--nec)"], revisar: ["Revisar", "var(--deu)"], sin_gasto: ["Sin gasto", "var(--gray-soft)"] } as const;
 const DED_LABEL: Record<string, string> = { gmm: "Primas de gastos médicos mayores", medico: "Honorarios médicos, dentales y hospital", ppr: "Aportaciones a PPR / AFORE voluntaria", funeral: "Gastos funerarios", colegiatura: "Colegiaturas", hipoteca: "Intereses hipotecarios", donativo: "Donativos" };
 
-export function Facturacion({ initial }: { initial: FacturacionData }) {
+export function Facturacion({ initial, vista = "resumen" }: { initial: FacturacionData; vista?: "resumen" | "detalle" }) {
+  const base = vista === "detalle" ? "/facturacion/detalle" : "/facturacion";
   const router = useRouter();
   const supabase = createClient();
   const [cfdis, setCfdis] = useState<Cfdi[]>(initial.cfdis);
@@ -154,10 +156,33 @@ export function Facturacion({ initial }: { initial: FacturacionData }) {
   const deducibleGen = Math.min(sumGen, topeGeneral), deduciblePpr = Math.min(pprCon, topePpr);
   const tasa = 0.34;  // tramo marginal estimado; ajustable
 
+  /* ---------- resumen mensual ---------- */
+  const mesesRes = [...new Set(initial.mensual.map((m) => m.mes.slice(0, 7)))].sort();
+  const cel = (mes: string, tipo: string, k: "facturas" | "total_mxn" | "iva" | "ret_isr" | "ret_iva" | "por_ligar") => initial.mensual.filter((m) => m.mes.startsWith(mes) && (tipo === "*" || m.tipo === tipo)).reduce((a, m) => a + Number(m[k]), 0);
+
+  /* ---------- exportar detalle (mismas columnas que Panel_Facturas_Maestro) ---------- */
+  const COLS: [string, (c: Cfdi) => string | number | null][] = [
+    ["ID", (c) => c.num], ["Tipo", (c) => TIPO_LABEL[c.tipo]], ["Fecha emisión", (c) => c.fecha], ["Folio Fiscal (UUID)", (c) => c.uuid.toUpperCase()], ["Serie", (c) => c.serie], ["Folio", (c) => c.folio],
+    ["Emisor", (c) => c.emisor_nombre], ["RFC emisor", (c) => c.emisor_rfc], ["Receptor", (c) => c.receptor_nombre], ["RFC receptor", (c) => c.receptor_rfc], ["Concepto", (c) => c.concepto],
+    ["Categoría contable", (c) => c.rubro ? `${c.grupo} › ${c.rubro}` : c.tipo === "nomina" ? "Sueldo" : c.tipo === "emitida" ? "Comisión" : null], ["Uso CFDI", (c) => c.uso_cfdi],
+    ["Subtotal", (c) => c.subtotal], ["IVA", (c) => c.iva], ["Ret. ISR", (c) => c.ret_isr], ["Ret. IVA", (c) => c.ret_iva], ["Total", (c) => c.total], ["Moneda", (c) => c.moneda], ["Tipo de cambio", (c) => c.tc], ["Total en MXN", (c) => c.total_mxn],
+    ["Forma de pago", (c) => c.forma_pago ? `${c.forma_pago} ${FORMA_PAGO[c.forma_pago] ?? ""}`.trim() : null], ["Método de pago", (c) => c.metodo_pago], ["Vencimiento", (c) => c.vencimiento],
+    ["Archivo origen", (c) => c.xml_nombre], ["Link Drive", (c) => c.link_drive], ["Confianza", (c) => c.confianza ?? (c.xml_path ? "alta (XML)" : null)], ["Notas", (c) => c.notas],
+  ];
+  const exportar = () => {
+    const esc = (v: string | number | null) => { const t = v == null ? "" : String(v); return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+    const csv = [COLS.map((c) => c[0]).join(","), ...lista.map((c) => COLS.map(([, f]) => esc(f(c))).join(","))].join("\n");
+    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" })); a.download = `facturas_${initial.anio}.csv`; a.click();
+  };
+  const editar = async (c: Cfdi, campo: "vencimiento" | "notas" | "link_drive", valor: string) => {
+    await supabase.from("cfdi").update({ [campo]: valor || null }).eq("uuid", c.uuid); await refrescar(c.uuid);
+  };
+
   return (
     <section>
       <div className="idea"><b>Cómo funciona</b>Arrastra los XML (y sus PDF) del SAT: se guardan en tu Storage privado, se leen emisor, UUID, impuestos y total, y se ligan al gasto que ya registraste (o creas el gasto desde la factura). Abajo, lo que llevas deducible del año: PPR y seguros de gastos médicos, con sus topes.</div>
 
+      {vista === "resumen" && (<>
       <div className={"card" + (busy ? " spin" : "")}>
         <div className="ct"><span>Subir facturas</span><span className="tag">{initial.rfcPropio ? `tu RFC: ${initial.rfcPropio}` : "sin RFC propio: todo entra como recibida (corre 11_rfc.sql)"}</span></div>
         <label className="door" htmlFor="f-in" onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add("over"); }} onDragLeave={(e) => e.currentTarget.classList.remove("over")}
@@ -169,7 +194,7 @@ export function Facturacion({ initial }: { initial: FacturacionData }) {
       </div>
 
       <div className="g2" style={{ marginBottom: 6 }}>
-        <div><label htmlFor="f-anio">Año</label><select id="f-anio" value={initial.anio} onChange={(e) => router.push(`/facturacion?anio=${e.target.value}`)}>{initial.anios.map((a) => <option key={a} value={a}>{a}</option>)}</select></div>
+        <div><label htmlFor="f-anio">Año</label><select id="f-anio" value={initial.anio} onChange={(e) => router.push(`${base}?anio=${e.target.value}`)}>{initial.anios.map((a) => <option key={a} value={a}>{a}</option>)}</select></div>
         <div><label htmlFor="f-q">Buscar</label><input id="f-q" type="text" placeholder="emisor, concepto, folio, UUID…" value={q} onChange={(e) => setQ(e.target.value)} /></div>
       </div>
       <div className="stat-row">
@@ -181,70 +206,26 @@ export function Facturacion({ initial }: { initial: FacturacionData }) {
       </div>
 
       <div className="card">
-        <div className="ct"><span>Facturas</span><span className="tag">{lista.length} de {cfdis.length}</span></div>
-        <div className="g3" style={{ marginBottom: 8 }}>
-          <div><label htmlFor="f-tipo">Tipo</label><select id="f-tipo" value={ftipo} onChange={(e) => setFtipo(e.target.value)}><option value="">Todas</option><option value="recibida">Recibidas</option><option value="emitida">Emitidas</option><option value="nomina">Nómina</option></select></div>
-          <div><label htmlFor="f-mes">Mes</label><select id="f-mes" value={fmes} onChange={(e) => setFmes(e.target.value)}><option value="">Todos</option>{meses.map((k) => <option key={k} value={k}>{ml(k)}</option>)}</select></div>
-          <div><label htmlFor="f-est">Estado</label><select id="f-est" value={festado} onChange={(e) => setFestado(e.target.value)}><option value="">Todos</option>{(Object.keys(ESTADO) as Cfdi["estado"][]).map((k) => <option key={k} value={k}>{ESTADO[k][0]}</option>)}</select></div>
-        </div>
+        <div className="ct"><span>Resumen mensual · {initial.anio}</span><Link href={`/facturacion/detalle?anio=${initial.anio}`} className="btn ghost sm">Ver detalle (todas las columnas) →</Link></div>
         <div className="tbl"><table>
-          <thead><tr><th>Fecha</th><th>Tipo</th><th>Emisor / receptor</th><th>Concepto</th><th>Rubro</th><th className="n">Total</th><th>Estado</th><th></th></tr></thead>
+          <thead><tr><th>Mes</th><th className="n">Recibidas</th><th className="n">Total recibidas</th><th className="n">IVA acreditable</th><th className="n">Emitidas</th><th className="n">Total emitidas</th><th className="n">Ret. ISR</th><th className="n">Ret. IVA</th><th className="n">Nómina</th><th className="n">Por ligar</th></tr></thead>
           <tbody>
-            {lista.map((c) => {
-              const quien = c.tipo === "emitida" ? `→ ${c.receptor_nombre ?? c.receptor_rfc}` : c.emisor_nombre ?? c.emisor_rfc;
-              return (
-                <tr key={c.uuid}>
-                  <td>{c.fecha.slice(8, 10)} {ml(c.fecha)}</td>
-                  <td><span className="badge" style={{ background: TIPO_COLOR[c.tipo] }}>{TIPO_LABEL[c.tipo]}</span></td>
-                  <td style={{ whiteSpace: "normal", maxWidth: 200 }}>{quien}{c.folio ? <span style={{ color: "var(--gray-soft)" }}> · {c.serie ?? ""}{c.folio}</span> : null}</td>
-                  <td style={{ whiteSpace: "normal", maxWidth: 240, color: "var(--gray-soft)" }}>{c.concepto}{c.forma_pago && FORMA_PAGO[c.forma_pago] ? ` · ${FORMA_PAGO[c.forma_pago]}` : ""}</td>
-                  <td>
-                    {c.tipo === "recibida" ? (
-                      <select value={c.rubro_id ?? ""} onChange={(e) => setRubro(c, e.target.value)} style={{ padding: "4px 6px", fontSize: 12, width: 180 }}>
-                        <option value="">— rubro —</option>
-                        {grupos.map((g) => <optgroup key={g.id} label={g.nombre}>{subsDe(g.id).map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}</optgroup>)}
-                      </select>
-                    ) : <span style={{ color: "var(--gray-soft)" }}>{c.tipo === "nomina" ? "Sueldo" : "Comisión"}</span>}
-                  </td>
-                  <td className="n" style={{ fontWeight: 700, color: "var(--ink)" }}>{c.moneda !== "MXN" ? `${c.moneda} ` : ""}{fmt2(c.total)}</td>
-                  <td><span className="badge" style={{ background: ESTADO[c.estado][1] }}>{ESTADO[c.estado][0]}</span>{c.movimiento && <div style={{ fontSize: 11, color: "var(--gray-soft)", whiteSpace: "normal" }}>{c.movimiento} · {c.cuenta} · {c.movimiento_fecha?.slice(5)}</div>}</td>
-                  <td style={{ whiteSpace: "nowrap" }}>
-                    {c.estado !== "ligada" && c.tipo === "recibida" && <><button className="link" type="button" onClick={() => { setLigando(c); setCreando(null); }}>Ligar</button> · <button className="link" type="button" onClick={() => { setCreando(c); setLigando(null); }}>Crear gasto</button> · </>}
-                    {c.estado === "ligada" && <><button className="link" type="button" onClick={() => desligar(c)}>Desligar</button> · </>}
-                    {c.estado === "nueva" && <><button className="link" type="button" onClick={() => setEstado(c, "sin_gasto")}>Sin gasto</button> · </>}
-                    <button className="link" type="button" onClick={() => abrir(c.xml_path)}>XML</button>{c.pdf_path && <> · <button className="link" type="button" onClick={() => abrir(c.pdf_path)}>PDF</button></>}
-                    {" "}<button className="del" type="button" aria-label="Borrar" onClick={() => borrar(c)}>✕</button>
-                  </td>
-                </tr>
-              );
-            })}
-            {!lista.length && <tr><td colSpan={8} className="hint">Sin facturas{cfdis.length ? " con esos filtros" : " en " + initial.anio}.</td></tr>}
+            {mesesRes.map((m) => (
+              <tr key={m}><td>{ml(m)}</td>
+                <td className="n">{cel(m, "recibida", "facturas") || "·"}</td><td className="n">{fmt(cel(m, "recibida", "total_mxn"))}</td><td className="n">{fmt(cel(m, "recibida", "iva"))}</td>
+                <td className="n">{cel(m, "emitida", "facturas") || "·"}</td><td className="n">{fmt(cel(m, "emitida", "total_mxn"))}</td><td className="n">{fmt(cel(m, "emitida", "ret_isr"))}</td><td className="n">{fmt(cel(m, "emitida", "ret_iva"))}</td>
+                <td className="n">{fmt(cel(m, "nomina", "total_mxn"))}</td>
+                <td className={"n" + (cel(m, "*", "por_ligar") ? " neg" : "")}>{cel(m, "*", "por_ligar") || "·"}</td></tr>
+            ))}
+            {!mesesRes.length && <tr><td colSpan={10} className="hint">Sin facturas en {initial.anio}. Sube los XML arriba.</td></tr>}
+            {mesesRes.length > 0 && <tr className="tot"><td>Año</td>
+              <td className="n">{cel("", "recibida", "facturas")}</td><td className="n">{fmt(cel("", "recibida", "total_mxn"))}</td><td className="n">{fmt(cel("", "recibida", "iva"))}</td>
+              <td className="n">{cel("", "emitida", "facturas")}</td><td className="n">{fmt(cel("", "emitida", "total_mxn"))}</td><td className="n">{fmt(cel("", "emitida", "ret_isr"))}</td><td className="n">{fmt(cel("", "emitida", "ret_iva"))}</td>
+              <td className="n">{fmt(cel("", "nomina", "total_mxn"))}</td><td className="n">{cel("", "*", "por_ligar")}</td></tr>}
           </tbody>
         </table></div>
+        <p className="hint">Totales en MXN al tipo de cambio de la factura. IVA acreditable y retenciones son lo que tu contador necesita cada mes.</p>
       </div>
-
-      {ligando && (
-        <div className="card">
-          <div className="ct"><span>Ligar {ligando.emisor_nombre ?? ligando.emisor_rfc} · {fmt2(ligando.total)} · {ligando.fecha}</span><button className="btn ghost sm" type="button" onClick={() => setLigando(null)}>Cerrar</button></div>
-          {candidatos(ligando).length === 0 && <p className="hint">No hay gastos sin factura con monto o fecha parecidos. Usa «Crear gasto» si no lo registraste.</p>}
-          {candidatos(ligando).map((g) => (
-            <div key={g.id} className="mov"><span><b style={{ color: "var(--ink)" }}>{g.grupo}</b> · {g.rubro} <span style={{ color: "var(--gray-soft)", fontSize: 12 }}>{g.fecha} · {g.cuenta}</span></span>
-              <span className="r"><b style={{ color: "var(--ink)" }}>{fmt2(g.monto_mxn)}</b><button className="btn sm" type="button" onClick={() => ligar(ligando, g)} disabled={busy}>Ligar</button></span></div>
-          ))}
-        </div>
-      )}
-      {creando && (
-        <div className="card">
-          <div className="ct"><span>Crear gasto desde la factura · {fmt2(creando.total)} · {creando.fecha}</span><button className="btn ghost sm" type="button" onClick={() => setCreando(null)}>Cerrar</button></div>
-          <div className="g3">
-            <div><label>Rubro</label><div style={{ padding: "10px 0" }}>{creando.rubro ? `${creando.grupo} › ${creando.rubro}` : <span className="neg">elige el rubro en la tabla</span>}</div></div>
-            <div><label htmlFor="c-cta">Pagado con</label><select id="c-cta" value={cCuenta} onChange={(e) => setCCuenta(e.target.value)}>{initial.cuentas.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}</select></div>
-            <div><label>&nbsp;</label><button className="btn sm" type="button" onClick={() => crearGasto(creando)} disabled={busy || !creando.rubro_id}>+ Crear y ligar</button></div>
-          </div>
-          <p className="hint">Se registra como gasto real en la fecha de la factura, al libro que corresponde al rubro, pagado por ti.</p>
-        </div>
-      )}
-
       <h2>Deducciones personales · {initial.anio}</h2>
       <div className="g2">
         <div className="card">
@@ -272,6 +253,93 @@ export function Facturacion({ initial }: { initial: FacturacionData }) {
         </div>
       </div>
 
+      </>)}
+      {vista === "detalle" && (<>
+        <div className="topline" style={{ marginBottom: 8 }}><Link href={`/facturacion?anio=${initial.anio}`} className="btn ghost sm">← Resumen</Link></div>
+      <div className="g2" style={{ marginBottom: 6 }}>
+        <div><label htmlFor="f-anio">Año</label><select id="f-anio" value={initial.anio} onChange={(e) => router.push(`${base}?anio=${e.target.value}`)}>{initial.anios.map((a) => <option key={a} value={a}>{a}</option>)}</select></div>
+        <div><label htmlFor="f-q">Buscar</label><input id="f-q" type="text" placeholder="emisor, concepto, folio, UUID…" value={q} onChange={(e) => setQ(e.target.value)} /></div>
+      </div>
+      <div className="stat-row">
+        <div className="stat"><div className="v">{cfdis.length}</div><div className="l">CFDI {initial.anio}</div></div>
+        <div className="stat"><div className="v">{fmt(tot("recibida"))}</div><div className="l">Recibidas · {cfdis.filter((c) => c.tipo === "recibida").length}</div></div>
+        <div className="stat"><div className="v">{fmt(tot("emitida"))}</div><div className="l">Emitidas · {cfdis.filter((c) => c.tipo === "emitida").length}</div></div>
+        <div className="stat"><div className="v">{fmt(tot("nomina"))}</div><div className="l">Nómina · {cfdis.filter((c) => c.tipo === "nomina").length}</div></div>
+        <div className="stat"><div className={"v" + (porLigar ? " neg" : "")}>{porLigar}</div><div className="l">Por ligar a un gasto</div></div>
+      </div>
+
+      <div className="card">
+        <div className="ct"><span>Detalle de facturas</span><span className="tag">{lista.length} de {cfdis.length} · <button className="link" type="button" onClick={exportar}>exportar CSV</button></span></div>
+        <div className="g3" style={{ marginBottom: 8 }}>
+          <div><label htmlFor="f-tipo">Tipo</label><select id="f-tipo" value={ftipo} onChange={(e) => setFtipo(e.target.value)}><option value="">Todas</option><option value="recibida">Recibidas</option><option value="emitida">Emitidas</option><option value="nomina">Nómina</option></select></div>
+          <div><label htmlFor="f-mes">Mes</label><select id="f-mes" value={fmes} onChange={(e) => setFmes(e.target.value)}><option value="">Todos</option>{meses.map((k) => <option key={k} value={k}>{ml(k)}</option>)}</select></div>
+          <div><label htmlFor="f-est">Estado</label><select id="f-est" value={festado} onChange={(e) => setFestado(e.target.value)}><option value="">Todos</option>{(Object.keys(ESTADO) as Cfdi["estado"][]).map((k) => <option key={k} value={k}>{ESTADO[k][0]}</option>)}</select></div>
+        </div>
+        <div className="tbl" style={{ fontSize: 12 }}><table>
+          <thead><tr>{COLS.map((c) => <th key={c[0]} className={["Subtotal", "IVA", "Ret. ISR", "Ret. IVA", "Total", "Total en MXN", "Tipo de cambio"].includes(c[0]) ? "n" : undefined}>{c[0]}</th>)}<th>Estado</th><th>Acciones</th></tr></thead>
+          <tbody>
+            {lista.map((c) => (
+              <tr key={c.uuid}>
+                <td>{c.num}</td>
+                <td><span className="badge" style={{ background: TIPO_COLOR[c.tipo] }}>{TIPO_LABEL[c.tipo]}</span></td>
+                <td>{c.fecha}</td>
+                <td style={{ fontFamily: "monospace", fontSize: 11 }} title={c.uuid}>{c.uuid.slice(0, 8).toUpperCase()}…</td>
+                <td>{c.serie}</td><td>{c.folio}</td>
+                <td style={{ whiteSpace: "normal", maxWidth: 180 }}>{c.emisor_nombre}</td><td>{c.emisor_rfc}</td>
+                <td style={{ whiteSpace: "normal", maxWidth: 160 }}>{c.receptor_nombre}</td><td>{c.receptor_rfc}</td>
+                <td style={{ whiteSpace: "normal", maxWidth: 220 }}>{c.concepto}</td>
+                <td>{c.tipo === "recibida" ? (
+                  <select value={c.rubro_id ?? ""} onChange={(e) => setRubro(c, e.target.value)} style={{ padding: "3px 5px", fontSize: 12, width: 170 }}>
+                    <option value="">— rubro —</option>
+                    {grupos.map((g) => <optgroup key={g.id} label={g.nombre}>{subsDe(g.id).map((r) => <option key={r.id} value={r.id}>{r.nombre}</option>)}</optgroup>)}
+                  </select>) : c.tipo === "nomina" ? "Sueldo" : "Comisión"}</td>
+                <td>{c.uso_cfdi}</td>
+                <td className="n">{fmt2(c.subtotal)}</td><td className="n">{fmt2(c.iva)}</td><td className="n">{fmt2(c.ret_isr)}</td><td className="n">{fmt2(c.ret_iva)}</td>
+                <td className="n" style={{ fontWeight: 700, color: "var(--ink)" }}>{fmt2(c.total)}</td><td>{c.moneda}</td><td className="n">{c.tc ?? ""}</td><td className="n">{fmt2(c.total_mxn)}</td>
+                <td>{c.forma_pago ? FORMA_PAGO[c.forma_pago] ?? c.forma_pago : ""}</td><td>{c.metodo_pago}</td>
+                <td><input type="date" defaultValue={c.vencimiento ?? ""} onBlur={(e) => e.target.value !== (c.vencimiento ?? "") && editar(c, "vencimiento", e.target.value)} style={{ padding: "3px 5px", fontSize: 12, width: 130 }} /></td>
+                <td style={{ whiteSpace: "normal", maxWidth: 160, fontSize: 11 }}>{c.xml_nombre}{c.pdf_nombre ? ` · ${c.pdf_nombre}` : ""}</td>
+                <td><input type="url" defaultValue={c.link_drive ?? ""} placeholder="https://drive…" onBlur={(e) => e.target.value !== (c.link_drive ?? "") && editar(c, "link_drive", e.target.value)} style={{ padding: "3px 5px", fontSize: 12, width: 120 }} /></td>
+                <td>{c.confianza ?? (c.xml_path ? "alta (XML)" : "")}</td>
+                <td><input type="text" defaultValue={c.notas ?? ""} onBlur={(e) => e.target.value !== (c.notas ?? "") && editar(c, "notas", e.target.value)} style={{ padding: "3px 5px", fontSize: 12, width: 140 }} /></td>
+                <td><span className="badge" style={{ background: ESTADO[c.estado][1] }}>{ESTADO[c.estado][0]}</span>{c.movimiento && <div style={{ fontSize: 11, color: "var(--gray-soft)", whiteSpace: "normal" }}>{c.movimiento} · {c.cuenta}</div>}</td>
+                <td style={{ whiteSpace: "nowrap" }}>
+                  {c.estado !== "ligada" && c.tipo === "recibida" && <><button className="link" type="button" onClick={() => { setLigando(c); setCreando(null); }}>Ligar</button> · <button className="link" type="button" onClick={() => { setCreando(c); setLigando(null); }}>Crear gasto</button> · </>}
+                  {c.estado === "ligada" && <><button className="link" type="button" onClick={() => desligar(c)}>Desligar</button> · </>}
+                  {c.estado === "nueva" && <><button className="link" type="button" onClick={() => setEstado(c, "sin_gasto")}>Sin gasto</button> · </>}
+                  <button className="link" type="button" onClick={() => abrir(c.xml_path)}>XML</button>{c.pdf_path && <> · <button className="link" type="button" onClick={() => abrir(c.pdf_path)}>PDF</button></>}
+                  {" "}<button className="del" type="button" aria-label="Borrar" onClick={() => borrar(c)}>✕</button>
+                </td>
+              </tr>
+            ))}
+            {!lista.length && <tr><td colSpan={30} className="hint">Sin facturas{cfdis.length ? " con esos filtros" : " en " + initial.anio}.</td></tr>}
+          </tbody>
+        </table></div>
+        <p className="hint">Vencimiento, link de Drive y notas se editan en la celda (se guardan al salir). Confianza «alta (XML)» = leída del XML timbrado.</p>
+      </div>
+      {ligando && (
+        <div className="card">
+          <div className="ct"><span>Ligar {ligando.emisor_nombre ?? ligando.emisor_rfc} · {fmt2(ligando.total)} · {ligando.fecha}</span><button className="btn ghost sm" type="button" onClick={() => setLigando(null)}>Cerrar</button></div>
+          {candidatos(ligando).length === 0 && <p className="hint">No hay gastos sin factura con monto o fecha parecidos. Usa «Crear gasto» si no lo registraste.</p>}
+          {candidatos(ligando).map((g) => (
+            <div key={g.id} className="mov"><span><b style={{ color: "var(--ink)" }}>{g.grupo}</b> · {g.rubro} <span style={{ color: "var(--gray-soft)", fontSize: 12 }}>{g.fecha} · {g.cuenta}</span></span>
+              <span className="r"><b style={{ color: "var(--ink)" }}>{fmt2(g.monto_mxn)}</b><button className="btn sm" type="button" onClick={() => ligar(ligando, g)} disabled={busy}>Ligar</button></span></div>
+          ))}
+        </div>
+      )}
+      {creando && (
+        <div className="card">
+          <div className="ct"><span>Crear gasto desde la factura · {fmt2(creando.total)} · {creando.fecha}</span><button className="btn ghost sm" type="button" onClick={() => setCreando(null)}>Cerrar</button></div>
+          <div className="g3">
+            <div><label>Rubro</label><div style={{ padding: "10px 0" }}>{creando.rubro ? `${creando.grupo} › ${creando.rubro}` : <span className="neg">elige el rubro en la tabla</span>}</div></div>
+            <div><label htmlFor="c-cta">Pagado con</label><select id="c-cta" value={cCuenta} onChange={(e) => setCCuenta(e.target.value)}>{initial.cuentas.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}</select></div>
+            <div><label>&nbsp;</label><button className="btn sm" type="button" onClick={() => crearGasto(creando)} disabled={busy || !creando.rubro_id}>+ Crear y ligar</button></div>
+          </div>
+          <p className="hint">Se registra como gasto real en la fecha de la factura, al libro que corresponde al rubro, pagado por ti.</p>
+        </div>
+      )}
+
+      </>)}
       {toast && <div className="toast" role="status">{toast}</div>}
     </section>
   );

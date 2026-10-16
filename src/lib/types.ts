@@ -158,7 +158,11 @@ export interface Cfdi {
   movimiento_id: string | null; movimiento: string | null; movimiento_fecha: string | null; movimiento_monto: number | null;
   cuenta: string | null;
   xml_path: string | null; pdf_path: string | null;
+  xml_nombre: string | null; pdf_nombre: string | null;
+  num: number; vencimiento: string | null; confianza: string | null; link_drive: string | null; total_mxn: number;
 }
+
+export interface CfdiMensual { anio: number; mes: string; tipo: string; facturas: number; total_mxn: number; iva: number; ret_isr: number; ret_iva: number; por_ligar: number }
 
 /** Gasto sin CFDI, candidato a ligar. */
 export interface GastoSinCfdi { id: string; fecha: string; descripcion: string; grupo: string; rubro: string; rubro_id: string | null; cuenta: string; monto_mxn: number }
@@ -175,6 +179,7 @@ export interface FacturacionData {
   rubros: Rubro[];
   cuentas: Cuenta[];
   deducciones: DeduccionAnual[];
+  mensual: CfdiMensual[];
   ingresoAnual: number;   // sueldo + bono + honorarios brutos del año (base para topes)
   uma: number;            // UMA diaria vigente
 }
