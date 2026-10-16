@@ -22,7 +22,7 @@ export function Facturacion({ initial, vista = "resumen" }: { initial: Facturaci
   const [ftipo, setFtipo] = useState(""); const [fmes, setFmes] = useState(""); const [festado, setFestado] = useState(""); const [q, setQ] = useState("");
   const [creando, setCreando] = useState<Cfdi | null>(null);
   const [cCuenta, setCCuenta] = useState(initial.cuentas.find((c) => c.nombre === "AMEX")?.id ?? initial.cuentas[0]?.id ?? "");
-  const aviso = (t: string) => { setToast(t); setTimeout(() => setToast(""), 4500); };
+  const aviso = (t: string) => { setToast(t); setTimeout(() => setToast(""), 9000); };
   const grupos = initial.rubros.filter((r) => !r.padre_id);
   const subsDe = (gid: string) => initial.rubros.filter((r) => r.padre_id === gid);
 
@@ -32,12 +32,14 @@ export function Facturacion({ initial, vista = "resumen" }: { initial: Facturaci
     const lista = Array.from(files);
     const xmls = lista.filter((f) => f.name.toLowerCase().endsWith(".xml"));
     const pdfs = lista.filter((f) => f.name.toLowerCase().endsWith(".pdf"));
-    let ok = 0, dup = 0; const errs: string[] = [];
+    let ok = 0, dup = 0; const errs: string[] = []; const otroAnio = new Set<string>();
     try {
       for (const f of xmls) {
         try {
           const p = parseCfdi(await f.text(), initial.rfcPropio);
           if (cfdis.some((c) => c.uuid === p.uuid)) { dup++; continue; }
+          const { data: ya } = await supabase.from("cfdi").select("uuid,fecha").eq("uuid", p.uuid).maybeSingle();   // puede estar en otro año
+          if (ya) { dup++; otroAnio.add(String(ya.fecha).slice(0, 4)); continue; }
           const anio = p.fecha.slice(0, 4), base = `${initial.userId}/cfdi/${anio}/${p.uuid}`;
           const { error: e1 } = await supabase.storage.from("documentos").upload(`${base}.xml`, f, { contentType: "text/xml", upsert: true });
           if (e1) throw e1;
@@ -61,12 +63,14 @@ export function Facturacion({ initial, vista = "resumen" }: { initial: Facturaci
           const { error: e4 } = await supabase.from("cfdi").insert(row);
           if (e4) throw e4;
           const { data: v } = await supabase.from("v_cfdi").select("*").eq("uuid", p.uuid).single();
-          if (v) setCfdis((prev) => [v as Cfdi, ...prev]);
+          if (v && p.fecha.startsWith(String(initial.anio))) setCfdis((prev) => [v as Cfdi, ...prev]);
+          else otroAnio.add(p.fecha.slice(0, 4));
           ok++;
         } catch (e) { errs.push(`${f.name}: ${(e as Error).message}`); }
       }
       if (!xmls.length && pdfs.length) errs.push("Sube el XML junto con el PDF: el PDF solo se guarda como anexo del XML.");
-      aviso(`${ok} CFDI guardado${ok === 1 ? "" : "s"}${dup ? ` · ${dup} ya existían` : ""}${errs.length ? ` · ${errs.length} con error` : ""}`);
+      const anios = [...otroAnio].filter((a) => a !== String(initial.anio));
+      aviso(`${ok} CFDI guardado${ok === 1 ? "" : "s"}${dup ? ` · ${dup} ya existían` : ""}${anios.length ? ` · están en ${anios.join(", ")}: cambia el año arriba` : ""}${errs.length ? ` · error: ${errs[0]}` : ""}`);
       if (errs.length) console.warn(errs);
     } finally { setBusy(false); }
   };
