@@ -21,8 +21,10 @@ function mesDe(path: string, f: DriveFile): string {
  * Recorre la carpeta DRIVE_FACTURAS_FOLDER_ID, procesa lo nuevo y lo guarda.
  */
 async function sync(db: SupabaseClient, userId: string, rfc: string | null) {
-  const root = process.env.DRIVE_FACTURAS_FOLDER_ID;
-  if (!root) throw new Error("DRIVE_FACTURAS_FOLDER_ID no configurado.");
+  // acepta el ID solo o la URL completa de la carpeta; quita espacios y comillas
+  const raw = (process.env.DRIVE_FACTURAS_FOLDER_ID ?? "").trim().replace(/^["']|["']$/g, "");
+  const root = raw.match(/folders\/([-\w]{20,})/)?.[1] ?? raw.match(/[-\w]{20,}/)?.[0];
+  if (!root) throw new Error(`DRIVE_FACTURAS_FOLDER_ID inválido (${raw.length} caracteres). Debe ser 1uf4az0pUKUCxHe-WuSg8Vw_VYacZWfyZ.`);
   const items = await walk(root, "", (n) => /consolidad/i.test(n));
   const { data: done } = await db.from("drive_sync").select("drive_id").eq("user_id", userId);
   const hechos = new Set((done ?? []).map((d) => d.drive_id));

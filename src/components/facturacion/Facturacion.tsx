@@ -9,7 +9,7 @@ import { parseCfdi, FORMA_PAGO } from "@/lib/cfdi";
 
 const TIPO_LABEL = { emitida: "Emitida", recibida: "Recibida", nomina: "Nómina" } as const;
 const TIPO_COLOR = { emitida: "var(--c6)", recibida: "var(--aho)", nomina: "var(--nec)" } as const;
-const ESTADO = { nueva: ["Por ligar", "var(--gus)"], ligada: ["Ligada", "var(--nec)"], revisar: ["Revisar", "var(--deu)"], sin_gasto: ["Sin gasto", "var(--gray-soft)"] } as const;
+const ESTADO = { nueva: ["Nueva", "var(--gus)"], ligada: ["Ligada", "var(--nec)"], revisar: ["Revisar", "var(--deu)"], sin_gasto: ["Sin gasto", "var(--gray-soft)"] } as const;
 const DED_LABEL: Record<string, string> = { gmm: "Primas de gastos médicos mayores", medico: "Honorarios médicos, dentales y hospital", ppr: "Aportaciones a PPR / AFORE voluntaria", funeral: "Gastos funerarios", colegiatura: "Colegiaturas", hipoteca: "Intereses hipotecarios", donativo: "Donativos" };
 
 export function Facturacion({ initial, vista = "resumen" }: { initial: FacturacionData; vista?: "resumen" | "detalle" }) {
@@ -133,7 +133,9 @@ export function Facturacion({ initial, vista = "resumen" }: { initial: Facturaci
   const lista = cfdis.filter((c) => (!ftipo || c.tipo === ftipo) && (!fmes || mesKey(c.fecha) === fmes) && (!festado || c.estado === festado)
     && (!q || `${c.emisor_nombre} ${c.receptor_nombre} ${c.concepto} ${c.folio} ${c.uuid}`.toLowerCase().includes(q.toLowerCase())));
   const tot = (t: Cfdi["tipo"]) => cfdis.filter((c) => c.tipo === t).reduce((a, c) => a + c.total, 0);
-  const porLigar = cfdis.filter((c) => c.estado === "nueva").length;
+  const esSinRubro = (c: Cfdi) => c.tipo === "recibida" && !c.rubro_id;
+  const sinRubro = cfdis.filter(esSinRubro).length;
+  const sinRubroMes = (mes: string) => cfdis.filter((c) => esSinRubro(c) && c.fecha.startsWith(mes)).length;
 
   /* ---------- deducciones ---------- */
   const umaAnual = initial.uma * 365, tope5 = umaAnual * 5;
@@ -171,7 +173,7 @@ export function Facturacion({ initial, vista = "resumen" }: { initial: Facturaci
 
   return (
     <section>
-      <div className="idea"><b>Cómo funciona</b>Arrastra los XML (y sus PDF) del SAT: se guardan en tu Storage privado, se leen emisor, UUID, impuestos y total, y se ligan al gasto que ya registraste (o creas el gasto desde la factura). Abajo, lo que llevas deducible del año: PPR y seguros de gastos médicos, con sus topes.</div>
+      <div className="idea"><b>Cómo funciona</b>Sube tus facturas a la carpeta de Drive «01 - Facturas» (o suéltalas aquí): se guardan en tu Storage privado y se leen emisor, UUID, impuestos y total. Ponle rubro a una factura y todas las de ese emisor lo heredan. Abajo, lo que llevas deducible del año: PPR y seguros de gastos médicos, con sus topes.</div>
 
       {vista === "resumen" && (<>
       <div className={"card" + (busy ? " spin" : "")}>
@@ -203,26 +205,26 @@ export function Facturacion({ initial, vista = "resumen" }: { initial: Facturaci
         <div className="stat"><div className="v">{fmt(tot("recibida"))}</div><div className="l">Recibidas · {cfdis.filter((c) => c.tipo === "recibida").length}</div></div>
         <div className="stat"><div className="v">{fmt(tot("emitida"))}</div><div className="l">Emitidas · {cfdis.filter((c) => c.tipo === "emitida").length}</div></div>
         <div className="stat"><div className="v">{fmt(tot("nomina"))}</div><div className="l">Nómina · {cfdis.filter((c) => c.tipo === "nomina").length}</div></div>
-        <div className="stat"><div className={"v" + (porLigar ? " neg" : "")}>{porLigar}</div><div className="l">Por ligar a un gasto</div></div>
+        <div className="stat"><div className={"v" + (sinRubro ? " neg" : "")}>{sinRubro}</div><div className="l">Recibidas sin rubro</div></div>
       </div>
 
       <div className="card">
         <div className="ct"><span>Resumen mensual · {initial.anio}</span><Link href={`/facturacion/detalle?anio=${initial.anio}`} className="btn ghost sm">Ver detalle (todas las columnas) →</Link></div>
         <div className="tbl"><table>
-          <thead><tr><th>Mes</th><th className="n">Recibidas</th><th className="n">Total recibidas</th><th className="n">IVA acreditable</th><th className="n">Emitidas</th><th className="n">Total emitidas</th><th className="n">Ret. ISR</th><th className="n">Ret. IVA</th><th className="n">Nómina</th><th className="n">Por ligar</th></tr></thead>
+          <thead><tr><th>Mes</th><th className="n">Recibidas</th><th className="n">Total recibidas</th><th className="n">IVA acreditable</th><th className="n">Emitidas</th><th className="n">Total emitidas</th><th className="n">Ret. ISR</th><th className="n">Ret. IVA</th><th className="n">Nómina</th><th className="n">Sin rubro</th></tr></thead>
           <tbody>
             {mesesRes.map((m) => (
               <tr key={m}><td>{ml(m)}</td>
                 <td className="n">{cel(m, "recibida", "facturas") || "·"}</td><td className="n">{fmt(cel(m, "recibida", "total_mxn"))}</td><td className="n">{fmt(cel(m, "recibida", "iva"))}</td>
                 <td className="n">{cel(m, "emitida", "facturas") || "·"}</td><td className="n">{fmt(cel(m, "emitida", "total_mxn"))}</td><td className="n">{fmt(cel(m, "emitida", "ret_isr"))}</td><td className="n">{fmt(cel(m, "emitida", "ret_iva"))}</td>
                 <td className="n">{fmt(cel(m, "nomina", "total_mxn"))}</td>
-                <td className={"n" + (cel(m, "*", "por_ligar") ? " neg" : "")}>{cel(m, "*", "por_ligar") || "·"}</td></tr>
+                <td className={"n" + (sinRubroMes(m) ? " neg" : "")}>{sinRubroMes(m) || "·"}</td></tr>
             ))}
             {!mesesRes.length && <tr><td colSpan={10} className="hint">Sin facturas en {initial.anio}. Sube los XML arriba.</td></tr>}
             {mesesRes.length > 0 && <tr className="tot"><td>Año</td>
               <td className="n">{cel("", "recibida", "facturas")}</td><td className="n">{fmt(cel("", "recibida", "total_mxn"))}</td><td className="n">{fmt(cel("", "recibida", "iva"))}</td>
               <td className="n">{cel("", "emitida", "facturas")}</td><td className="n">{fmt(cel("", "emitida", "total_mxn"))}</td><td className="n">{fmt(cel("", "emitida", "ret_isr"))}</td><td className="n">{fmt(cel("", "emitida", "ret_iva"))}</td>
-              <td className="n">{fmt(cel("", "nomina", "total_mxn"))}</td><td className="n">{cel("", "*", "por_ligar")}</td></tr>}
+              <td className="n">{fmt(cel("", "nomina", "total_mxn"))}</td><td className="n">{sinRubro}</td></tr>}
           </tbody>
         </table></div>
         <p className="hint">Totales en MXN al tipo de cambio de la factura. IVA acreditable y retenciones son lo que tu contador necesita cada mes.</p>
@@ -280,7 +282,7 @@ export function Facturacion({ initial, vista = "resumen" }: { initial: Facturaci
         <div className="stat"><div className="v">{fmt(tot("recibida"))}</div><div className="l">Recibidas · {cfdis.filter((c) => c.tipo === "recibida").length}</div></div>
         <div className="stat"><div className="v">{fmt(tot("emitida"))}</div><div className="l">Emitidas · {cfdis.filter((c) => c.tipo === "emitida").length}</div></div>
         <div className="stat"><div className="v">{fmt(tot("nomina"))}</div><div className="l">Nómina · {cfdis.filter((c) => c.tipo === "nomina").length}</div></div>
-        <div className="stat"><div className={"v" + (porLigar ? " neg" : "")}>{porLigar}</div><div className="l">Por ligar a un gasto</div></div>
+        <div className="stat"><div className={"v" + (sinRubro ? " neg" : "")}>{sinRubro}</div><div className="l">Recibidas sin rubro</div></div>
       </div>
 
       <div className="card">

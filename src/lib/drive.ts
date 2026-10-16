@@ -23,7 +23,7 @@ export async function listFolder(folderId: string): Promise<DriveFile[]> {
     const q = encodeURIComponent(`'${folderId}' in parents and trashed = false`);
     const r = await fetch(`${API}/files?q=${q}&fields=${encodeURIComponent(FIELDS)}&pageSize=200&supportsAllDrives=true&includeItemsFromAllDrives=true${pageToken ? `&pageToken=${pageToken}` : ""}`,
       { headers: { Authorization: `Bearer ${await token()}` }, cache: "no-store" });
-    if (!r.ok) throw new Error(`Drive list ${r.status}: ${(await r.text()).slice(0, 200)}`);
+    if (!r.ok) throw new Error(`Drive list ${r.status} (carpeta «${folderId}»): ${(await r.text()).slice(0, 200)}`);
     const j = await r.json(); out.push(...(j.files ?? [])); pageToken = j.nextPageToken ?? "";
   } while (pageToken);
   return out;
