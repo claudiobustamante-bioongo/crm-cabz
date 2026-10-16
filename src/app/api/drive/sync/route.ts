@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createAdmin, type SupabaseClient } from "@supabase/supabase-js";
-import { walk, download, type DriveFile } from "@/lib/drive";
+import { walk, download, ensureFolder, moveFile, type DriveFile } from "@/lib/drive";
 import { parseCfdiServer } from "@/lib/cfdi-server";
 
 export const maxDuration = 60;              // plan Hobby de Vercel
@@ -110,7 +110,45 @@ async function sync(db: SupabaseClient, userId: string, rfc: string | null) {
 
   // 3) lo demás (hojas, imágenes…) se marca como omitido para no revisarlo cada vez
   for (const { file, path } of nuevos.filter((i) => !xmls.includes(i) && !pdfs.includes(i))) { await log(file, path, "omitido", { detalle: file.mimeType }); res.omitidos++; }
-  return { ...res, revisados: items.length, nuevos: nuevos.length, pendientes: pendientesTotal.length - nuevos.length };
+
+  // 4) ordenar en Drive: cada archivo ya clasificado va a Mex|Extranjeras / año / MM-Mes (si la cuenta de servicio es Editor)
+  const ord = await ordenar(db, userId, root, items);
+  return { ...res, ...ord, revisados: items.length, nuevos: nuevos.length, pendientes: pendientesTotal.length - nuevos.length };
+}
+
+const NOMBRE_MES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+async function ordenar(db: SupabaseClient, userId: string, root: string, items: { file: DriveFile; path: string }[]) {
+  const out = { movidos: 0, sin_permiso: 0 };
+  const { data: regs } = await db.from("drive_sync").select("drive_id,tipo,mes").eq("user_id", userId).in("tipo", ["cfdi", "pdf_cfdi", "extranjera"]).not("mes", "is", null);
+  if (!regs?.length) return out;
+  const porId = new Map(items.map((i) => [i.file.id, i]));
+  const carpetas = new Map<string, string>();   // "mex/2026/02" → folderId
+  let mexId: string | null = null, extId: string | null = null;
+  for (const r of regs) {
+    if (out.movidos >= 60) break;   // cabe en los 60 s; el resto en la siguiente corrida
+    const it = porId.get(r.drive_id); if (!it) continue;
+    const anio = String(r.mes).slice(0, 4), mm = String(r.mes).slice(5, 7);
+    const esExt = r.tipo === "extranjera";
+    const destinoPath = `${esExt ? "ext" : "mex"}/${anio}/${mm}`;
+    // ya está en su lugar si su ruta termina en "<anio>/<mm>-<Mes>" y en la rama correcta
+    const enRama = esExt ? /extranjer/i.test(it.path) : /mex/i.test(it.path) && !/extranjer/i.test(it.path);
+    if (enRama && new RegExp(`${anio}/${mm}\\s*-`).test(it.path)) continue;
+    try {
+      if (!carpetas.has(destinoPath)) {
+        if (esExt) extId ??= await ensureFolder(root, "01 - Facturas Extranjeras", /extranjer/i);
+        else mexId ??= await ensureFolder(root, "02 - Facturas Mex", /mex/i);
+        const anioId = await ensureFolder(esExt ? extId! : mexId!, anio);
+        carpetas.set(destinoPath, await ensureFolder(anioId, `${mm}-${NOMBRE_MES[+mm - 1]}`, new RegExp(`^${mm}\\s*-`)));
+      }
+      await moveFile(it.file.id, carpetas.get(destinoPath)!, it.file.parents ?? []);
+      await db.from("drive_sync").update({ carpeta: `${esExt ? "01 - Facturas Extranjeras" : "02 - Facturas Mex"}/${anio}/${mm}-${NOMBRE_MES[+mm - 1]}` }).eq("drive_id", r.drive_id).eq("user_id", userId);
+      out.movidos++;
+    } catch (e) {
+      if (/403|insufficient|permission/i.test((e as Error).message)) { out.sin_permiso++; if (out.sin_permiso > 2) break; }   // sin permiso de escritura: no insistir
+      else throw e;
+    }
+  }
+  return out;
 }
 
 export async function GET(req: Request) {

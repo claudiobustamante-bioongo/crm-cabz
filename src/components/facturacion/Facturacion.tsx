@@ -80,7 +80,7 @@ export function Facturacion({ initial, vista = "resumen" }: { initial: Facturaci
     try {
       const r = await fetch("/api/drive/sync", { method: "POST" }); const j = await r.json();
       if (!r.ok) throw new Error(j.error || r.statusText);
-      aviso(`Drive: ${j.cfdi} CFDI, ${j.pdf} PDF anexos, ${j.extranjeras} extranjeras, ${j.duplicados} repetidas, ${j.errores} errores${j.pendientes ? ` · faltan ${j.pendientes}, vuelve a pulsar` : ""}.`);
+      aviso(`Drive: ${j.cfdi} CFDI, ${j.pdf} PDF anexos, ${j.extranjeras} extranjeras, ${j.duplicados} repetidas, ${j.errores} errores${j.movidos ? ` · ${j.movidos} ordenados en carpetas` : ""}${j.sin_permiso ? " · para ordenar, comparte la carpeta como Editor" : ""}${j.pendientes ? ` · faltan ${j.pendientes}, vuelve a pulsar` : ""}.`);
       setTimeout(() => window.location.reload(), 2500);
     } catch (e) { aviso("Drive: " + (e as Error).message); } finally { setBusy(false); }
   };
@@ -157,7 +157,7 @@ export function Facturacion({ initial, vista = "resumen" }: { initial: Facturaci
   const deducibleTotal = deducibleGen + deduciblePpr;
   // facturas por categoría deducible (recibidas a tu RFC), para ubicarlas rápido
   const catDe = (c: Cfdi) => initial.rubros.find((r) => r.id === c.rubro_id)?.deduccion ?? null;
-  const factDed = (k: string) => cfdis.filter((c) => c.tipo === "recibida" && catDe(c) === k && (!initial.rfcPropio || c.receptor_rfc === initial.rfcPropio.toUpperCase()))
+  const factDed = (k: string) => cfdis.filter((c) => c.tipo === "recibida" && (c.tipo_comprobante ?? "I") === "I" && catDe(c) === k && (!initial.rfcPropio || c.receptor_rfc === initial.rfcPropio.toUpperCase()))
     .sort((a, b) => b.fecha.localeCompare(a.fecha));
   const tasa = 0.34;  // tramo marginal estimado; ajustable
 
@@ -205,7 +205,7 @@ export function Facturacion({ initial, vista = "resumen" }: { initial: Facturaci
         <input id="f-in" type="file" accept=".xml,.pdf" multiple hidden onChange={(e) => { subir(e.target.files); e.target.value = ""; }} />
           </div>
         </div>
-        <p className="hint">Mexicanas = XML CFDI (el PDF se anexa si se llama igual o trae el UUID). PDF sin XML = extranjera, catalogada por la carpeta de mes. Duplicados por UUID se ignoran; nómina y emitidas quedan «sin gasto».</p>
+        <p className="hint">Mexicanas = XML CFDI (el PDF se anexa si se llama igual o trae el UUID). PDF sin XML en «Facturas Extranjeras» = extranjera. Cada archivo se acomoda solo en Mex o Extranjeras / año / mes. Duplicados por UUID se ignoran; nómina y emitidas quedan «sin gasto».</p>
       </div>
 
       <div className="g2" style={{ marginBottom: 6 }}>
