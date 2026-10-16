@@ -30,7 +30,9 @@ async function sync(db: SupabaseClient, userId: string, rfc: string | null) {
   const hechos = new Set((done ?? []).map((d) => d.drive_id));
   const { data: uuids } = await db.from("cfdi").select("uuid").eq("user_id", userId);
   const existentes = new Set((uuids ?? []).map((u) => u.uuid));
-  const pendientesTotal = items.filter((i) => !hechos.has(i.file.id) && !i.file.shortcutDetails);
+  const esXml = (f: DriveFile) => /\.xml$/i.test(f.name) || f.mimeType === "text/xml" || f.mimeType === "application/xml";
+  // todos los XML antes que cualquier PDF, para que un PDF nunca se procese antes que su XML (aunque caigan en lotes distintos)
+  const pendientesTotal = items.filter((i) => !hechos.has(i.file.id) && !i.file.shortcutDetails).sort((a, b) => Number(esXml(b.file)) - Number(esXml(a.file)));
   const nuevos = pendientesTotal.slice(0, LOTE);
   const res = { cfdi: 0, pdf: 0, extranjeras: 0, omitidos: 0, errores: 0, duplicados: 0 };
   const log = (f: DriveFile, path: string, tipo: string, extra: Record<string, unknown> = {}) =>
@@ -90,6 +92,9 @@ async function sync(db: SupabaseClient, userId: string, rfc: string | null) {
           await log(file, path, "pdf_cfdi", { cfdi_uuid: uuid, documento_id: dp?.id ?? null, mes: String(c.fecha).slice(0, 7) + "-01" });
         } else await log(file, path, "omitido", { detalle: "el CFDI ya tiene PDF", cfdi_uuid: uuid });
         res.pdf++;
+      } else if (!/extranjer/i.test(path)) {   // PDF suelto en carpeta de mexicanas: no es extranjera, falta su XML
+        await log(file, path, "omitido", { detalle: "PDF sin XML (carpeta de mexicanas)", mes: mesDe(path, file) });
+        res.omitidos++;
       } else {
         const mes = mesDe(path, file);
         const safe = file.name.replace(/[^\w.\-]+/g, "_");
