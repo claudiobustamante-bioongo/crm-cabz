@@ -138,3 +138,43 @@ export interface InversionesData {
   flex: boolean;      // hay token + query de IBKR Flex en el servidor
   flexHoy: boolean;   // hay query Month-to-Date para el NAV de hoy
 }
+
+/** Fila de v_cfdi. */
+export interface Cfdi {
+  uuid: string;
+  tipo: "emitida" | "recibida" | "nomina";
+  tipo_comprobante: string | null;
+  fecha: string;
+  serie: string | null; folio: string | null;
+  emisor_rfc: string; emisor_nombre: string | null;
+  receptor_rfc: string; receptor_nombre: string | null;
+  concepto: string | null; categoria: string | null; uso_cfdi: string | null;
+  subtotal: number; descuento: number; iva: number; ret_isr: number; ret_iva: number; total: number;
+  moneda: string; tc: number | null;
+  forma_pago: string | null; metodo_pago: string | null;
+  rubro_id: string | null; rubro: string | null; grupo: string | null;
+  estado: "nueva" | "ligada" | "revisar" | "sin_gasto";
+  notas: string | null;
+  movimiento_id: string | null; movimiento: string | null; movimiento_fecha: string | null; movimiento_monto: number | null;
+  cuenta: string | null;
+  xml_path: string | null; pdf_path: string | null;
+}
+
+/** Gasto sin CFDI, candidato a ligar. */
+export interface GastoSinCfdi { id: string; fecha: string; descripcion: string; grupo: string; rubro: string; rubro_id: string | null; cuenta: string; monto_mxn: number }
+
+export interface DeduccionAnual { anio: number; categoria: string; registrado: number; con_comprobante: number | null; movimientos: number; sin_cfdi: number }
+
+export interface FacturacionData {
+  anio: number;
+  anios: number[];
+  rfcPropio: string | null;
+  userId: string;
+  cfdis: Cfdi[];
+  sinCfdi: GastoSinCfdi[];
+  rubros: Rubro[];
+  cuentas: Cuenta[];
+  deducciones: DeduccionAnual[];
+  ingresoAnual: number;   // sueldo + bono + honorarios brutos del año (base para topes)
+  uma: number;            // UMA diaria vigente
+}

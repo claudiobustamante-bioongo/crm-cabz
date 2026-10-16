@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Asignacion, Catalogo, Cuenta, Evento, GastosData, IbkrMes, Ingreso, IngresosData, InversionesData, Movimiento, NetWorth, Rubro, TipoCambio } from "./types";
+import type { Asignacion, Catalogo, Cfdi, Cuenta, DeduccionAnual, Evento, FacturacionData, GastoSinCfdi, GastosData, IbkrMes, Ingreso, IngresosData, InversionesData, Movimiento, NetWorth, Rubro, TipoCambio } from "./types";
 
 const TIPOS_GASTO = ["gasto", "ahorro", "abono_deuda"];
 
@@ -111,5 +111,38 @@ export async function loadInversiones(supabase: SupabaseClient): Promise<Inversi
     banxico: !!process.env.BANXICO_TOKEN,
     flex: !!(process.env.IBKR_FLEX_TOKEN && process.env.IBKR_FLEX_QUERY_ID),
     flexHoy: !!(process.env.IBKR_FLEX_TOKEN && process.env.IBKR_FLEX_QUERY_MTD),
+  };
+}
+
+export const UMA_DIARIA = 113.14;   // 2025–2026; actualizar cada febrero
+
+export async function loadFacturacion(supabase: SupabaseClient, anio: number): Promise<FacturacionData> {
+  const desde = `${anio}-01-01`, hasta = `${anio}-12-31`;
+  const [{ data: { user } }, cfg, cfdis, sin, rubros, cuentas, ded, ing, anios] = await Promise.all([
+    supabase.auth.getUser(),
+    supabase.from("app_config").select("rfc_propio").maybeSingle(),
+    supabase.from("v_cfdi").select("*").gte("fecha", desde).lte("fecha", hasta).order("fecha", { ascending: false }).range(0, 4999),
+    supabase.from("v_movimientos").select("id,fecha,descripcion,grupo,rubro,rubro_id,cuenta,monto_mxn").eq("tipo", "gasto").eq("estado", "real").eq("tiene_cfdi", false)
+      .gte("fecha", desde).lte("fecha", hasta).order("fecha", { ascending: false }).range(0, 9999),
+    supabase.from("rubros").select("id,codigo,nombre,padre_id,clasificacion,emoji,activo").eq("naturaleza", "gasto").eq("activo", true).order("orden").order("nombre"),
+    supabase.from("cuentas").select("id,nombre,tipo,es_medio_pago").eq("activa", true).eq("es_medio_pago", true).order("nombre"),
+    supabase.from("v_deducciones_anual").select("*").eq("anio", anio),
+    supabase.from("v_ingresos").select("tipo,monto,bruto,proyectado").gte("fecha", desde).lte("fecha", hasta).in("tipo", ["sueldo", "bono", "comision"]),
+    supabase.from("anios").select("anio").order("anio"),
+  ]);
+  const num = (r: Record<string, unknown>) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, typeof v === "string" && /^-?\d+(\.\d+)?$/.test(v) && !["serie", "folio", "uuid"].includes(k) ? Number(v) : v]));
+  const ingresoAnual = must<{ tipo: string; monto: number; bruto: number | null }[]>(ing, "ingresos").reduce((a, i) => a + Number(i.tipo === "comision" ? i.bruto ?? i.monto : i.monto), 0);
+  const listaAnios = must<{ anio: number }[]>(anios, "anios").map((a) => a.anio);
+  if (!listaAnios.includes(anio)) listaAnios.push(anio);
+  return {
+    anio, anios: listaAnios.sort(),
+    rfcPropio: cfg.data?.rfc_propio ?? null,
+    userId: user?.id ?? "",
+    cfdis: must<Record<string, unknown>[]>(cfdis, "cfdi").map(num) as unknown as Cfdi[],
+    sinCfdi: must<GastoSinCfdi[]>(sin, "movimientos").map((m) => ({ ...m, monto_mxn: Number(m.monto_mxn) })),
+    rubros: must<Rubro[]>(rubros, "rubros"),
+    cuentas: must<Cuenta[]>(cuentas, "cuentas"),
+    deducciones: must<Record<string, unknown>[]>(ded, "deducciones").map(num) as unknown as DeduccionAnual[],
+    ingresoAnual, uma: UMA_DIARIA,
   };
 }
