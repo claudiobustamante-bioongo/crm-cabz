@@ -8,6 +8,7 @@ export interface Rubro {
   clasificacion: Clasificacion | null;
   emoji: string | null;
   activo: boolean;
+  deduccion?: string | null;   // categoría art. 151 (gmm, medico, ppr…)
 }
 
 export interface Cuenta {

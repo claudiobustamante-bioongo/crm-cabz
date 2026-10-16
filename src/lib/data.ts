@@ -124,7 +124,7 @@ export async function loadFacturacion(supabase: SupabaseClient, anio: number): P
     supabase.from("v_cfdi").select("*").gte("fecha", desde).lte("fecha", hasta).order("fecha", { ascending: false }).range(0, 4999),
     supabase.from("v_movimientos").select("id,fecha,descripcion,grupo,rubro,rubro_id,cuenta,monto_mxn").eq("tipo", "gasto").eq("estado", "real").eq("tiene_cfdi", false)
       .gte("fecha", desde).lte("fecha", hasta).order("fecha", { ascending: false }).range(0, 9999),
-    supabase.from("rubros").select("id,codigo,nombre,padre_id,clasificacion,emoji,activo").eq("naturaleza", "gasto").eq("activo", true).order("orden").order("nombre"),
+    supabase.from("rubros").select("id,codigo,nombre,padre_id,clasificacion,emoji,activo,deduccion").eq("naturaleza", "gasto").eq("activo", true).order("orden").order("nombre"),
     supabase.from("cuentas").select("id,nombre,tipo,es_medio_pago").eq("activa", true).eq("es_medio_pago", true).order("nombre"),
     supabase.from("v_deducciones_anual").select("*").eq("anio", anio),
     supabase.from("v_cfdi_mensual").select("*").eq("anio", anio).order("mes"),

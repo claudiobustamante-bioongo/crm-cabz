@@ -147,8 +147,14 @@ export function Facturacion({ initial, vista = "resumen" }: { initial: Facturaci
   const generales = ["gmm", "medico", "funeral", "colegiatura", "hipoteca", "donativo"];
   const sumGen = generales.reduce((a, k) => a + Number(ded(k)?.con_comprobante ?? 0), 0);
   const regGen = generales.reduce((a, k) => a + Number(ded(k)?.registrado ?? 0), 0);
-  const pprCon = Number(ded("ppr")?.con_comprobante ?? 0);
-  const deducibleGen = Math.min(sumGen, topeGeneral), deduciblePpr = Math.min(pprCon, topePpr);
+  // PPR: cuenta lo aportado (se acredita con la constancia anual, no con CFDI)
+  const pprAportado = Math.max(Number(ded("ppr")?.registrado ?? 0), Number(ded("ppr")?.con_comprobante ?? 0));
+  const deducibleGen = Math.min(sumGen, topeGeneral), deduciblePpr = Math.min(pprAportado, topePpr);
+  const deducibleTotal = deducibleGen + deduciblePpr;
+  // facturas por categoría deducible (recibidas a tu RFC), para ubicarlas rápido
+  const catDe = (c: Cfdi) => initial.rubros.find((r) => r.id === c.rubro_id)?.deduccion ?? null;
+  const factDed = (k: string) => cfdis.filter((c) => c.tipo === "recibida" && catDe(c) === k && (!initial.rfcPropio || c.receptor_rfc === initial.rfcPropio.toUpperCase()))
+    .sort((a, b) => b.fecha.localeCompare(a.fecha));
   const tasa = 0.34;  // tramo marginal estimado; ajustable
 
   /* ---------- resumen mensual ---------- */
@@ -260,13 +266,38 @@ export function Facturacion({ initial, vista = "resumen" }: { initial: Facturaci
         <div className="card">
           <div className="ct"><span>PPR / AFORE voluntaria</span><span className="tag">art. 151 fr. V · tope aparte</span></div>
           <div className="stat-row">
-            <div className="stat"><div className="v">{fmt(Number(ded("ppr")?.registrado ?? 0))}</div><div className="l">Aportado {initial.anio}</div></div>
+            <div className="stat"><div className="v">{fmt(pprAportado)}</div><div className="l">Aportado {initial.anio}</div></div>
             <div className="stat"><div className="v">{fmt(topePpr)}</div><div className="l">Tope (10 % ingreso o 5 UMA)</div></div>
             <div className="stat"><div className={"v " + (deduciblePpr >= topePpr ? "pos" : "")}>{fmt(deduciblePpr)}</div><div className="l">Deducible</div></div>
           </div>
           <div className="catbar"><div className="lbl"><span>Avance al tope</span><span>{topePpr ? Math.round((deduciblePpr / topePpr) * 100) : 0} %</span></div><div className="track"><div className="fill" style={{ width: `${topePpr ? Math.min(100, (deduciblePpr / topePpr) * 100) : 0}%`, background: "var(--aho)" }} /></div></div>
-          <p className="hint">Faltan {fmt(Math.max(0, topePpr - pprCon))} para llegar al tope este año; ahorro fiscal estimado ≈ {fmt(deduciblePpr * tasa)}. Se acredita con la constancia anual de la aseguradora/operadora, no con CFDI. Registra las aportaciones en Gastos → Ahorro › PPR.</p>
+          <p className="hint">Faltan {fmt(Math.max(0, topePpr - pprAportado))} para llegar al tope este año; ahorro fiscal estimado ≈ {fmt(deduciblePpr * tasa)}. Se acredita con la constancia anual de la aseguradora/operadora, no con CFDI. Registra las aportaciones en Gastos → Ahorro › PPR.</p>
         </div>
+      </div>
+
+      <div className="card">
+        <div className="ct"><span>Total deducciones personales · {initial.anio}</span><span className="tag">declaración anual</span></div>
+        <div className="stat-row">
+          <div className="stat"><div className="v">{fmt(deducibleGen)}</div><div className="l">Médicos y seguros</div></div>
+          <div className="stat"><div className="v">{fmt(deduciblePpr)}</div><div className="l">PPR / AFORE</div></div>
+          <div className="stat"><div className="v pos">{fmt(deducibleTotal)}</div><div className="l">Total deducible</div></div>
+          <div className="stat"><div className="v pos">{fmt(deducibleTotal * tasa)}</div><div className="l">Ahorro ISR ≈ {Math.round(tasa * 100)} %</div></div>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="ct"><span>Facturas de tus deducciones</span><span className="tag">XML · PDF · Drive</span></div>
+        {[...generales, "ppr"].filter((k) => factDed(k).length).map((k) => { const fs = factDed(k); return (
+          <details key={k} style={{ marginBottom: 6 }}>
+            <summary style={{ cursor: "pointer" }}><b>{DED_LABEL[k]}</b> · {fs.length} factura{fs.length === 1 ? "" : "s"} · {fmt(fs.reduce((a, c) => a + c.total_mxn, 0))}</summary>
+            <div className="tbl" style={{ fontSize: 12 }}><table><tbody>
+              {fs.map((c) => (
+                <tr key={c.uuid}><td>{c.fecha}</td><td style={{ whiteSpace: "normal" }}>{c.emisor_nombre ?? c.emisor_rfc}</td><td>{c.rubro}</td><td className="n">{fmt2(c.total_mxn)}</td>
+                  <td style={{ whiteSpace: "nowrap" }}><button className="link" type="button" onClick={() => abrir(c.xml_path)}>XML</button>{c.pdf_path && <> · <button className="link" type="button" onClick={() => abrir(c.pdf_path)}>PDF</button></>} · <button className="link" type="button" onClick={() => drive(c)}>{c.link_drive ? "Drive ↗" : "Drive ?"}</button></td></tr>
+              ))}
+            </tbody></table></div>
+          </details>); })}
+        {![...generales, "ppr"].some((k) => factDed(k).length) && <p className="hint">Aún no hay facturas con rubro deducible. En Detalle, ponle rubro (Seguros › GMM, Salud › …) a una factura de cada emisor.</p>}
       </div>
 
       </>)}
