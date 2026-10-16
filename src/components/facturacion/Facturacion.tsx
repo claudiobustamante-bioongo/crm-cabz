@@ -236,7 +236,7 @@ export function Facturacion({ initial, vista = "resumen" }: { initial: Facturaci
               <td className="n">{fmt(cel("", "nomina", "total_mxn"))}</td><td className="n">{sinRubro}</td></tr>}
           </tbody>
         </table></div>
-        <p className="hint">Solo facturas que recibes (gastos y nómina); las que emites viven en Ingresos. Totales en MXN al tipo de cambio de la factura.</p>
+        <p className="hint">Solo facturas que recibes (gastos y nómina); las que emites viven en Ingresos. Totales netos en MXN: las notas de crédito restan y los complementos de pago no suman.</p>
       </div>
       {initial.extranjeras.length > 0 && (
         <div className="card">
