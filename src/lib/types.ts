@@ -46,6 +46,9 @@ export interface Movimiento {
   rubro_codigo: string;
   evento: string | null;
   notas: string | null;
+  rubro_id?: string | null;
+  cuenta_id?: string;
+  cfdi_uuid?: string | null;
 }
 
 export interface Asignacion {

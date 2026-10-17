@@ -7,7 +7,7 @@ import { CLS_COLOR, CLS_LABEL, color, cuentaColor, fmt, mesKey, ml, slug } from 
 import { Formulario, type NuevoGasto } from "./Formulario";
 import { BarrasMes, Dona } from "./Graficas";
 
-const MOV_COLS = "id,fecha,mes,tipo,estado,descripcion,monto,monto_mxn,moneda,cuenta,grupo,grupo_codigo,rubro,rubro_codigo,evento,notas";
+const MOV_COLS = "id,fecha,mes,tipo,estado,descripcion,monto,monto_mxn,moneda,cuenta,cuenta_id,grupo,grupo_codigo,rubro,rubro_id,rubro_codigo,evento,notas,cfdi_uuid";
 
 export function Gastos({ initial }: { initial: GastosData }) {
   const router = useRouter();
@@ -113,6 +113,27 @@ export function Gastos({ initial }: { initial: GastosData }) {
     } catch (e) {
       aviso("No se guardó: " + (e as Error).message);
     } finally { setBusy(false); }
+  };
+
+  /* ---------- edición en línea ---------- */
+  const [edit, setEdit] = useState<{ id: string; fecha: string; monto: string; cuenta_id: string; rubro_id: string; notas: string } | null>(null);
+  const empezarEdicion = (m: Movimiento) => setEdit({ id: m.id, fecha: m.fecha, monto: String(m.monto), cuenta_id: m.cuenta_id ?? "", rubro_id: m.rubro_id ?? "", notas: m.notas ?? "" });
+  const guardarEdicion = async () => {
+    if (!edit) return;
+    const monto = Number(edit.monto);
+    if (!(monto > 0)) return aviso("Monto inválido.");
+    setBusy(true);
+    try {
+      const { error } = await supabase.rpc("editar_movimiento", { p: { id: edit.id, fecha: edit.fecha, monto, cuenta_id: edit.cuenta_id || null, rubro_id: edit.rubro_id || null, notas: edit.notas } });
+      if (error) throw error;
+      const [m, a] = await Promise.all([
+        supabase.from("v_movimientos").select(MOV_COLS).eq("id", edit.id).single(),
+        supabase.from("v_asignaciones").select("movimiento_id,libro,pagador,monto").eq("movimiento_id", edit.id),
+      ]);
+      if (m.data) setMovs((prev) => prev.map((x) => (x.id === edit.id ? (m.data as Movimiento) : x)));
+      setAsigs((prev) => [...prev.filter((x) => x.movimiento_id !== edit.id), ...((a.data ?? []) as Asignacion[])]);
+      setEdit(null); aviso("Movimiento actualizado.");
+    } catch (e) { aviso("No se guardó: " + (e as Error).message); } finally { setBusy(false); }
   };
 
   const borrar = async (m: Movimiento) => {
@@ -239,6 +260,21 @@ export function Gastos({ initial }: { initial: GastosData }) {
             <tbody>
               {lista.map((m) => {
                 const as = asigDe(m.id);
+                if (edit?.id === m.id) {
+                  const inp = { padding: "3px 5px", fontSize: 12 } as const;
+                  return (
+                    <tr key={m.id} style={{ background: "var(--paper-2, #fbf8f1)" }}>
+                      <td colSpan={2}><select value={edit.rubro_id} onChange={(e) => setEdit({ ...edit, rubro_id: e.target.value })} style={{ ...inp, width: 210 }}>
+                        {rubros.filter((r) => !r.padre_id).map((g) => <optgroup key={g.id} label={g.nombre}>{rubros.filter((r) => r.padre_id === g.id).map((r) => <option key={r.id} value={r.id}>{r.nombre}</option>)}</optgroup>)}</select></td>
+                      <td><select value={edit.cuenta_id} onChange={(e) => setEdit({ ...edit, cuenta_id: e.target.value })} style={{ ...inp, width: 130 }}>{initial.cuentas.filter((c) => c.es_medio_pago || c.id === edit.cuenta_id).map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}</select></td>
+                      <td><input type="date" value={edit.fecha} onChange={(e) => setEdit({ ...edit, fecha: e.target.value })} style={{ ...inp, width: 130 }} /></td>
+                      <td>{as.map((a) => `${a.libro}${a.pagador !== "CABZ" ? " · " + a.pagador : ""}`).join(", ")}</td>
+                      <td><input type="text" value={edit.notas} onChange={(e) => setEdit({ ...edit, notas: e.target.value })} style={{ ...inp, width: 160 }} /></td>
+                      <td className="n"><input type="number" step="0.01" value={edit.monto} onChange={(e) => setEdit({ ...edit, monto: e.target.value })} style={{ ...inp, width: 100, textAlign: "right" }} /></td>
+                      <td style={{ whiteSpace: "nowrap" }}><button className="link" type="button" onClick={guardarEdicion} disabled={busy}>Guardar</button> · <button className="link" type="button" onClick={() => setEdit(null)}>Cancelar</button></td>
+                    </tr>
+                  );
+                }
                 return (
                   <tr key={m.id} style={m.estado === "presupuesto" ? { opacity: 0.55 } : undefined}>
                     <td><i style={{ display: "inline-block", width: 9, height: 9, borderRadius: 2, background: color(m.grupo), border: "1px solid var(--ink)", marginRight: 5 }} />{m.grupo}</td>
@@ -248,7 +284,7 @@ export function Gastos({ initial }: { initial: GastosData }) {
                     <td>{as.map((a) => `${a.libro}${a.pagador !== "CABZ" ? " · " + a.pagador : ""}`).join(", ") || (m.tipo === "ahorro" ? "ahorro" : m.tipo)}</td>
                     <td style={{ whiteSpace: "normal", color: "var(--gray-soft)" }}>{[m.evento, m.notas].filter(Boolean).join(" · ")}</td>
                     <td className="n" style={{ fontWeight: 700, color: "var(--ink)" }}>{fmt(m.monto_mxn)}</td>
-                    <td><button className="del" type="button" aria-label="Borrar" onClick={() => borrar(m)}>✕</button></td>
+                    <td style={{ whiteSpace: "nowrap" }}><button className="link" type="button" aria-label="Editar" title="Editar" onClick={() => empezarEdicion(m)}>✎</button> <button className="del" type="button" aria-label="Borrar" onClick={() => borrar(m)}>✕</button></td>
                   </tr>
                 );
               })}

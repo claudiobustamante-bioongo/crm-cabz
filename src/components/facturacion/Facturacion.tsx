@@ -92,10 +92,9 @@ export function Facturacion({ initial, vista = "resumen" }: { initial: Facturaci
     if (v) setCfdis((prev) => prev.map((c) => (c.uuid === uuid ? (v as Cfdi) : c)));
   };
   const desligar = async (c: Cfdi) => {
-    if (!c.movimiento_id) return;
-    await supabase.from("movimientos").update({ cfdi_uuid: null, tiene_cfdi: false }).eq("id", c.movimiento_id);
-    await supabase.from("cfdi").update({ estado: "nueva" }).eq("uuid", c.uuid);
-    router.refresh(); await refrescar(c.uuid);
+    const { error } = await supabase.rpc("desligar_cfdi", { p_uuid: c.uuid });
+    if (error) return aviso("No se desligó: " + error.message + (/function/i.test(error.message) ? " (corre 19_editar_movimiento.sql)" : ""));
+    router.refresh(); await refrescar(c.uuid); aviso("Desligada; el gasto se queda en Gastos.");
   };
   const crearGasto = async (c: Cfdi) => {
     const rubro = initial.rubros.find((r) => r.id === c.rubro_id);

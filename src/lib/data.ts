@@ -18,7 +18,7 @@ export async function loadGastos(supabase: SupabaseClient, anio: number): Promis
     supabase.from("pagadores").select("codigo,nombre").eq("activo", true),
     supabase.from("eventos").select("id,nombre").order("fecha_inicio", { ascending: false }),
     supabase.from("v_movimientos")
-      .select("id,fecha,mes,tipo,estado,descripcion,monto,monto_mxn,moneda,cuenta,grupo,grupo_codigo,rubro,rubro_codigo,evento,notas")
+      .select("id,fecha,mes,tipo,estado,descripcion,monto,monto_mxn,moneda,cuenta,cuenta_id,grupo,grupo_codigo,rubro,rubro_id,rubro_codigo,evento,notas,cfdi_uuid")
       .in("tipo", TIPOS_GASTO).gte("fecha", desde).lte("fecha", hasta)
       .order("fecha", { ascending: false }).range(0, 9999),
     supabase.from("anios").select("anio").order("anio"),
