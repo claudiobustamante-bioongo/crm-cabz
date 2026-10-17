@@ -157,7 +157,8 @@ export function Facturacion({ initial, vista = "resumen" }: { initial: Facturaci
   const deducibleTotal = deducibleGen + deduciblePpr;
   // facturas por categoría deducible (recibidas a tu RFC), para ubicarlas rápido
   const catDe = (c: Cfdi) => initial.rubros.find((r) => r.id === c.rubro_id)?.deduccion ?? null;
-  const factDed = (k: string) => cfdis.filter((c) => c.tipo === "recibida" && (c.tipo_comprobante ?? "I") === "I" && catDe(c) === k && (!initial.rfcPropio || c.receptor_rfc === initial.rfcPropio.toUpperCase()))
+  const signo = (c: Cfdi) => (c.tipo_comprobante === "E" ? -1 : 1);   // nota de crédito resta
+  const factDed = (k: string) => cfdis.filter((c) => c.tipo === "recibida" && ["I", "E"].includes(c.tipo_comprobante ?? "I") && catDe(c) === k && (!initial.rfcPropio || c.receptor_rfc === initial.rfcPropio.toUpperCase()))
     .sort((a, b) => b.fecha.localeCompare(a.fecha));
   const tasa = 0.34;  // tramo marginal estimado; ajustable
 
@@ -293,10 +294,10 @@ export function Facturacion({ initial, vista = "resumen" }: { initial: Facturaci
         <div className="ct"><span>Facturas de tus deducciones</span><span className="tag">XML · PDF · Drive</span></div>
         {[...generales, "ppr"].filter((k) => factDed(k).length).map((k) => { const fs = factDed(k); return (
           <details key={k} style={{ marginBottom: 6 }}>
-            <summary style={{ cursor: "pointer" }}><b>{DED_LABEL[k]}</b> · {fs.length} factura{fs.length === 1 ? "" : "s"} · {fmt(fs.reduce((a, c) => a + c.total_mxn, 0))}</summary>
+            <summary style={{ cursor: "pointer" }}><b>{DED_LABEL[k]}</b> · {fs.filter((c) => c.tipo_comprobante !== "E").length} factura{fs.length === 1 ? "" : "s"}{fs.some((c) => c.tipo_comprobante === "E") ? ` (${fs.filter((c) => c.tipo_comprobante === "E").length} nota de crédito)` : ""} · {fmt(fs.reduce((a, c) => a + signo(c) * c.total_mxn, 0))}</summary>
             <div className="tbl" style={{ fontSize: 12 }}><table><tbody>
               {fs.map((c) => (
-                <tr key={c.uuid}><td>{c.fecha}</td><td style={{ whiteSpace: "normal" }}>{c.emisor_nombre ?? c.emisor_rfc}</td><td>{c.rubro}</td><td className="n">{fmt2(c.total_mxn)}</td>
+                <tr key={c.uuid} style={c.tipo_comprobante === "E" ? { color: "var(--deu)" } : undefined}><td>{c.fecha}</td><td style={{ whiteSpace: "normal" }}>{c.emisor_nombre ?? c.emisor_rfc}{c.tipo_comprobante === "E" ? " · nota de crédito" : ""}</td><td>{c.rubro}</td><td className="n">{c.tipo_comprobante === "E" ? "− " : ""}{fmt2(c.total_mxn)}</td>
                   <td style={{ whiteSpace: "nowrap" }}><button className="link" type="button" onClick={() => abrir(c.xml_path)}>XML</button>{c.pdf_path && <> · <button className="link" type="button" onClick={() => abrir(c.pdf_path)}>PDF</button></>} · <button className="link" type="button" onClick={() => drive(c)}>{c.link_drive ? "Drive ↗" : "Drive ?"}</button></td></tr>
               ))}
             </tbody></table></div>
