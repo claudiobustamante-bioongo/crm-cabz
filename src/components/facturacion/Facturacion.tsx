@@ -109,7 +109,7 @@ export function Facturacion({ initial, vista = "resumen" }: { initial: Facturaci
       await supabase.from("cfdi").update({ estado: "ligada" }).eq("uuid", c.uuid);
       await refrescar(c.uuid); setCreando(null);
       aviso(`Gasto creado: ${rubro.nombre} ${fmt2(c.total)} (${initial.cuentas.find((x) => x.id === cCuenta)?.nombre}).`);
-    } catch (e) { aviso("No se creó: " + (e as Error).message); } finally { setBusy(false); }
+    } catch (e) { aviso("No se creó: " + (e as Error).message); alert("No se creó el gasto: " + (e as Error).message); } finally { setBusy(false); }
   };
   const setRubro = async (c: Cfdi, rubro_id: string) => {
     await supabase.from("cfdi").update({ rubro_id: rubro_id || null }).eq("uuid", c.uuid);
@@ -327,6 +327,19 @@ export function Facturacion({ initial, vista = "resumen" }: { initial: Facturaci
         <div className="stat"><div className={"v" + (sinRubro ? " neg" : "")}>{sinRubro}</div><div className="l">Recibidas sin rubro</div></div>
       </div>
 
+      {creando && (
+        <div className="card">
+          <div className="ct"><span>Crear gasto desde la factura · {fmt2(creando.total)} · {creando.fecha}</span><button className="btn ghost sm" type="button" onClick={() => setCreando(null)}>Cerrar</button></div>
+          <div className="g3">
+            <div><label htmlFor="c-rubro">Rubro</label><select id="c-rubro" value={creando.rubro_id ?? ""} onChange={async (e) => { await setRubro(creando, e.target.value); const { data: v } = await supabase.from("v_cfdi").select("*").eq("uuid", creando.uuid).single(); if (v) setCreando(v as Cfdi); }}>
+                <option value="">— elige —</option>{grupos.map((g) => <optgroup key={g.id} label={g.nombre}>{subsDe(g.id).map((r) => <option key={r.id} value={r.id}>{r.nombre}</option>)}</optgroup>)}</select></div>
+            <div><label htmlFor="c-cta">Pagado con</label><select id="c-cta" value={cCuenta} onChange={(e) => setCCuenta(e.target.value)}>{initial.cuentas.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}</select></div>
+            <div><label>&nbsp;</label><button className="btn sm" type="button" onClick={() => crearGasto(creando)} disabled={busy || !creando.rubro_id}>+ Crear y ligar</button></div>
+          </div>
+          <p className="hint">Se registra como gasto real en la fecha de la factura, al libro que corresponde al rubro, pagado por ti.</p>
+        </div>
+      )}
+
       <div className="card">
         <div className="ct"><span>Detalle de facturas</span><span className="tag">{lista.length} de {cfdis.length} · <button className="link" type="button" onClick={exportar}>exportar CSV</button></span></div>
         <div className="g3" style={{ marginBottom: 8 }}>
@@ -363,7 +376,7 @@ export function Facturacion({ initial, vista = "resumen" }: { initial: Facturaci
                 <td><input type="text" defaultValue={c.notas ?? ""} onBlur={(e) => e.target.value !== (c.notas ?? "") && editar(c, "notas", e.target.value)} style={{ padding: "3px 5px", fontSize: 12, width: 140 }} /></td>
                 <td><span className="badge" style={{ background: ESTADO[c.estado][1] }}>{ESTADO[c.estado][0]}</span>{c.movimiento && <div style={{ fontSize: 11, color: "var(--gray-soft)", whiteSpace: "normal" }}>{c.movimiento} · {c.cuenta}</div>}</td>
                 <td style={{ whiteSpace: "nowrap" }}>
-                  {c.estado !== "ligada" && c.tipo === "recibida" && <><button className="link" type="button" onClick={() => setCreando(c)}>Crear gasto</button> · </>}
+                  {c.estado !== "ligada" && c.tipo === "recibida" && <><button className="link" type="button" onClick={() => { setCreando(c); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Crear gasto</button> · </>}
                   {c.estado === "ligada" && <><button className="link" type="button" onClick={() => desligar(c)}>Desligar</button> · </>}
                   {c.estado === "nueva" && <><button className="link" type="button" onClick={() => setEstado(c, "sin_gasto")}>Sin gasto</button> · </>}
                   <button className="link" type="button" onClick={() => abrir(c.xml_path)}>XML</button>{c.pdf_path && <> · <button className="link" type="button" onClick={() => abrir(c.pdf_path)}>PDF</button></>} · <button className="link" type="button" title={c.link_drive ? "Abrir en Drive" : "Buscar en Drive por UUID"} onClick={() => drive(c)}>{c.link_drive ? "Drive ↗" : "Drive ?"}</button>
@@ -376,17 +389,6 @@ export function Facturacion({ initial, vista = "resumen" }: { initial: Facturaci
         </table></div>
         <p className="hint">«Drive ↗» abre el archivo; «Drive ?» busca el UUID en tu Drive para que pegues el link en la celda. Vencimiento, link y notas se editan en la celda (se guardan al salir). Confianza «alta (XML)» = leída del XML timbrado.</p>
       </div>
-      {creando && (
-        <div className="card">
-          <div className="ct"><span>Crear gasto desde la factura · {fmt2(creando.total)} · {creando.fecha}</span><button className="btn ghost sm" type="button" onClick={() => setCreando(null)}>Cerrar</button></div>
-          <div className="g3">
-            <div><label>Rubro</label><div style={{ padding: "10px 0" }}>{creando.rubro ? `${creando.grupo} › ${creando.rubro}` : <span className="neg">elige el rubro en la tabla</span>}</div></div>
-            <div><label htmlFor="c-cta">Pagado con</label><select id="c-cta" value={cCuenta} onChange={(e) => setCCuenta(e.target.value)}>{initial.cuentas.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}</select></div>
-            <div><label>&nbsp;</label><button className="btn sm" type="button" onClick={() => crearGasto(creando)} disabled={busy || !creando.rubro_id}>+ Crear y ligar</button></div>
-          </div>
-          <p className="hint">Se registra como gasto real en la fecha de la factura, al libro que corresponde al rubro, pagado por ti.</p>
-        </div>
-      )}
 
       </>)}
       {toast && <div className="toast" role="status">{toast}</div>}
