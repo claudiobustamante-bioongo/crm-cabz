@@ -21,6 +21,7 @@ export function Facturacion({ initial, vista = "resumen" }: { initial: Facturaci
   const [toast, setToast] = useState("");
   const [ftipo, setFtipo] = useState(""); const [fmes, setFmes] = useState(""); const [festado, setFestado] = useState(""); const [q, setQ] = useState("");
   const [creando, setCreando] = useState<Cfdi | null>(null);
+  const [cMsi, setCMsi] = useState(0);   // 0 = un solo cargo; N = meses sin intereses
   const [cCuenta, setCCuenta] = useState(initial.cuentas.find((c) => c.nombre === "AMEX")?.id ?? initial.cuentas[0]?.id ?? "");
   const aviso = (t: string) => { setToast(t); setTimeout(() => setToast(""), 9000); };
   const grupos = initial.rubros.filter((r) => !r.padre_id);
@@ -103,12 +104,20 @@ export function Facturacion({ initial, vista = "resumen" }: { initial: Facturaci
     const libro = ({ Akela: "AKELA", Bioongo: "BIOONGO", Periplo: "PERIPLO" } as Record<string, string>)[grupo?.nombre ?? ""] ?? "PERSONAL";
     setBusy(true);
     try {
-      const p = { fecha: c.fecha, tipo: "gasto", descripcion: rubro.nombre, monto: c.total, moneda: c.moneda, cuenta_id: cCuenta, rubro_id: rubro.id, cfdi_uuid: c.uuid, notas: c.emisor_nombre, asignaciones: [{ libro, pagador: "CABZ", porcentaje: 100 }] };
-      const { error } = await supabase.rpc("registrar_movimiento", { p });
-      if (error) throw error;
+      const n = cMsi > 1 ? cMsi : 1;
+      const [y, m0, dia] = [+c.fecha.slice(0, 4), +c.fecha.slice(5, 7), +c.fecha.slice(8, 10)];
+      const fechaMes = (i: number) => { const d = new Date(Date.UTC(y, m0 - 1 + i, 1)); const ult = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate(); return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(Math.min(dia, ult)).padStart(2, "0")}`; };
+      const cuota = Math.round((c.total / n) * 100) / 100;
+      for (let i = 0; i < n; i++) {
+        const monto = i === n - 1 ? Math.round((c.total - cuota * (n - 1)) * 100) / 100 : cuota;   // la última absorbe el redondeo
+        const notas = [c.emisor_nombre, n > 1 ? `MSI ${i + 1}/${n} · total ${fmt2(c.total)}` : ""].filter(Boolean).join(" · ");
+        const p = { fecha: fechaMes(i), tipo: "gasto", descripcion: rubro.nombre, monto, moneda: c.moneda, cuenta_id: cCuenta, rubro_id: rubro.id, notas, asignaciones: [{ libro, pagador: "CABZ", porcentaje: 100 }], ...(i === 0 ? { cfdi_uuid: c.uuid } : {}) };
+        const { error } = await supabase.rpc("registrar_movimiento", { p });
+        if (error) throw error;
+      }
       await supabase.from("cfdi").update({ estado: "ligada" }).eq("uuid", c.uuid);
-      await refrescar(c.uuid); setCreando(null);
-      aviso(`Gasto creado: ${rubro.nombre} ${fmt2(c.total)} (${initial.cuentas.find((x) => x.id === cCuenta)?.nombre}).`);
+      await refrescar(c.uuid); setCreando(null); setCMsi(0);
+      aviso(`Gasto creado: ${rubro.nombre} ${fmt2(c.total)} (${initial.cuentas.find((x) => x.id === cCuenta)?.nombre})${n > 1 ? ` · ${n} MSI de ${fmt2(cuota)}` : ""}.`);
     } catch (e) { aviso("No se creó: " + (e as Error).message); alert("No se creó el gasto: " + (e as Error).message); } finally { setBusy(false); }
   };
   const setRubro = async (c: Cfdi, rubro_id: string) => {
@@ -334,9 +343,11 @@ export function Facturacion({ initial, vista = "resumen" }: { initial: Facturaci
             <div><label htmlFor="c-rubro">Rubro</label><select id="c-rubro" value={creando.rubro_id ?? ""} onChange={async (e) => { await setRubro(creando, e.target.value); const { data: v } = await supabase.from("v_cfdi").select("*").eq("uuid", creando.uuid).single(); if (v) setCreando(v as Cfdi); }}>
                 <option value="">— elige —</option>{grupos.map((g) => <optgroup key={g.id} label={g.nombre}>{subsDe(g.id).map((r) => <option key={r.id} value={r.id}>{r.nombre}</option>)}</optgroup>)}</select></div>
             <div><label htmlFor="c-cta">Pagado con</label><select id="c-cta" value={cCuenta} onChange={(e) => setCCuenta(e.target.value)}>{initial.cuentas.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}</select></div>
-            <div><label>&nbsp;</label><button className="btn sm" type="button" onClick={() => crearGasto(creando)} disabled={busy || !creando.rubro_id}>+ Crear y ligar</button></div>
+            <div><label htmlFor="c-msi">Meses sin intereses</label><select id="c-msi" value={cMsi} onChange={(e) => setCMsi(+e.target.value)}>
+              <option value={0}>Un solo cargo</option>{[3, 6, 9, 12, 18, 24].map((n) => <option key={n} value={n}>{n} meses · {fmt2(creando.total / n)}/mes</option>)}</select></div>
           </div>
-          <p className="hint">Se registra como gasto real en la fecha de la factura, al libro que corresponde al rubro, pagado por ti.</p>
+          <div style={{ marginTop: 8 }}><button className="btn sm" type="button" onClick={() => crearGasto(creando)} disabled={busy || !creando.rubro_id}>+ Crear y ligar</button></div>
+          <p className="hint">Se registra como gasto real al libro que corresponde al rubro, pagado por ti. Con meses sin intereses se crean N cargos mensuales iguales a partir de la fecha de la factura, cada uno en su mes; el primero queda ligado a la factura.</p>
         </div>
       )}
 
