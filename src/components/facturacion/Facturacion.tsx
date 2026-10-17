@@ -157,9 +157,17 @@ export function Facturacion({ initial, vista = "resumen" }: { initial: Facturaci
   const deducibleTotal = deducibleGen + deduciblePpr;
   // facturas por categoría deducible (recibidas a tu RFC), para ubicarlas rápido
   const catDe = (c: Cfdi) => initial.rubros.find((r) => r.id === c.rubro_id)?.deduccion ?? null;
-  const signo = (c: Cfdi) => (c.tipo_comprobante === "E" ? -1 : 1);   // nota de crédito resta
-  const factDed = (k: string) => cfdis.filter((c) => c.tipo === "recibida" && ["I", "E"].includes(c.tipo_comprobante ?? "I") && catDe(c) === k && (!initial.rfcPropio || c.receptor_rfc === initial.rfcPropio.toUpperCase()))
-    .sort((a, b) => b.fecha.localeCompare(a.fecha));
+  /** Facturas vigentes de una categoría: una nota de crédito (E) anula la factura (I) del mismo emisor y monto; ambas se ocultan. */
+  const factDed = (k: string) => {
+    const todas = cfdis.filter((c) => c.tipo === "recibida" && ["I", "E"].includes(c.tipo_comprobante ?? "I") && catDe(c) === k && (!initial.rfcPropio || c.receptor_rfc === initial.rfcPropio.toUpperCase()))
+      .sort((a, b) => a.fecha.localeCompare(b.fecha));
+    const fuera = new Set<string>();
+    todas.filter((c) => c.tipo_comprobante === "E").forEach((e) => {
+      const i = todas.find((c) => !fuera.has(c.uuid) && c.tipo_comprobante !== "E" && c.emisor_rfc === e.emisor_rfc && Math.abs(c.total_mxn - e.total_mxn) < 1 && c.fecha <= e.fecha);
+      if (i) { fuera.add(i.uuid); fuera.add(e.uuid); }
+    });
+    return { vigentes: todas.filter((c) => !fuera.has(c.uuid) && c.tipo_comprobante !== "E").sort((a, b) => b.fecha.localeCompare(a.fecha)), anuladas: fuera.size / 2 };
+  };
   const tasa = 0.34;  // tramo marginal estimado; ajustable
 
   /* ---------- resumen mensual ---------- */
@@ -258,7 +266,7 @@ export function Facturacion({ initial, vista = "resumen" }: { initial: Facturaci
         <div className="card">
           <div className="ct"><span>Gastos médicos y seguros</span><span className="tag">tope: 15 % del ingreso o 5 UMA anuales, lo menor</span></div>
           <div className="tbl"><table>
-            <thead><tr><th>Concepto</th><th className="n">Gastado</th><th className="n">Facturado (CFDI)</th><th className="n">Facturas</th></tr></thead>
+            <thead><tr><th>Concepto</th><th className="n">Pagado (Gastos)</th><th className="n">Facturado (CFDI)</th><th className="n">Facturas</th></tr></thead>
             <tbody>
               {generales.filter((k) => ded(k)).map((k) => { const d = ded(k)!; return (
                 <tr key={k}><td style={{ whiteSpace: "normal" }}>{DED_LABEL[k]}</td><td className="n">{fmt(Number(d.registrado))}</td><td className="n pos">{fmt(Number(d.con_comprobante ?? 0))}</td><td className="n">{d.facturas}</td></tr>); })}
@@ -266,7 +274,7 @@ export function Facturacion({ initial, vista = "resumen" }: { initial: Facturaci
               <tr className="tot"><td>Deducible</td><td className="n">{fmt(regGen)}</td><td className="n">{fmt(deducibleGen)}</td><td className="n">{sumGen > topeGeneral ? "al tope" : ""}</td></tr>
             </tbody>
           </table></div>
-          <p className="hint">Tope general {fmt(topeGeneral)} (ingreso del año {fmt(initial.ingresoAnual)} × 15 % vs 5 UMA = {fmt(tope5)}). Cuenta lo facturado a tu RFC en rubros deducibles (asigna el rubro a la factura una vez; el emisor se recuerda). Ahorro fiscal estimado ≈ {fmt(deducibleGen * tasa)} al {Math.round(tasa * 100)} % marginal.</p>
+          <p className="hint">Tope general {fmt(topeGeneral)} (ingreso del año {fmt(initial.ingresoAnual)} × 15 % vs 5 UMA = {fmt(tope5)}). «Pagado» es lo que llevas registrado en Gastos; «Facturado» es lo que suma para la declaración: facturas a tu RFC en rubros deducibles, netas de notas de crédito. Ahorro fiscal estimado ≈ {fmt(deducibleGen * tasa)} al {Math.round(tasa * 100)} % marginal.</p>
         </div>
         <div className="card">
           <div className="ct"><span>PPR / AFORE voluntaria</span><span className="tag">art. 151 fr. V · tope aparte</span></div>
@@ -292,17 +300,17 @@ export function Facturacion({ initial, vista = "resumen" }: { initial: Facturaci
 
       <div className="card">
         <div className="ct"><span>Facturas de tus deducciones</span><span className="tag">XML · PDF · Drive</span></div>
-        {[...generales, "ppr"].filter((k) => factDed(k).length).map((k) => { const fs = factDed(k); return (
+        {[...generales, "ppr"].filter((k) => factDed(k).vigentes.length).map((k) => { const { vigentes: fs, anuladas } = factDed(k); return (
           <details key={k} style={{ marginBottom: 6 }}>
-            <summary style={{ cursor: "pointer" }}><b>{DED_LABEL[k]}</b> · {fs.filter((c) => c.tipo_comprobante !== "E").length} factura{fs.length === 1 ? "" : "s"}{fs.some((c) => c.tipo_comprobante === "E") ? ` (${fs.filter((c) => c.tipo_comprobante === "E").length} nota de crédito)` : ""} · {fmt(fs.reduce((a, c) => a + signo(c) * c.total_mxn, 0))}</summary>
+            <summary style={{ cursor: "pointer" }}><b>{DED_LABEL[k]}</b> · {fs.length} factura{fs.length === 1 ? "" : "s"} · {fmt(fs.reduce((a, c) => a + c.total_mxn, 0))}{anuladas ? <span className="hint"> · {anuladas} anulada{anuladas === 1 ? "" : "s"} con nota de crédito (oculta{anuladas === 1 ? "" : "s"})</span> : null}</summary>
             <div className="tbl" style={{ fontSize: 12 }}><table><tbody>
               {fs.map((c) => (
-                <tr key={c.uuid} style={c.tipo_comprobante === "E" ? { color: "var(--deu)" } : undefined}><td>{c.fecha}</td><td style={{ whiteSpace: "normal" }}>{c.emisor_nombre ?? c.emisor_rfc}{c.tipo_comprobante === "E" ? " · nota de crédito" : ""}</td><td>{c.rubro}</td><td className="n">{c.tipo_comprobante === "E" ? "− " : ""}{fmt2(c.total_mxn)}</td>
+                <tr key={c.uuid}><td>{c.fecha}</td><td style={{ whiteSpace: "normal" }}>{c.emisor_nombre ?? c.emisor_rfc}</td><td>{c.rubro}</td><td className="n">{fmt2(c.total_mxn)}</td>
                   <td style={{ whiteSpace: "nowrap" }}><button className="link" type="button" onClick={() => abrir(c.xml_path)}>XML</button>{c.pdf_path && <> · <button className="link" type="button" onClick={() => abrir(c.pdf_path)}>PDF</button></>} · <button className="link" type="button" onClick={() => drive(c)}>{c.link_drive ? "Drive ↗" : "Drive ?"}</button></td></tr>
               ))}
             </tbody></table></div>
           </details>); })}
-        {![...generales, "ppr"].some((k) => factDed(k).length) && <p className="hint">Aún no hay facturas con rubro deducible. En Detalle, ponle rubro (Seguros › GMM, Salud › …) a una factura de cada emisor.</p>}
+        {![...generales, "ppr"].some((k) => factDed(k).vigentes.length) && <p className="hint">Aún no hay facturas con rubro deducible. En Detalle, ponle rubro (Seguros › GMM, Salud › …) a una factura de cada emisor.</p>}
       </div>
 
       </>)}
