@@ -86,17 +86,25 @@ export function Inversiones({ initial }: { initial: InversionesData }) {
 
   /* ---------- tabla principal ---------- */
   type Line = { lbl: string; f: (r: IbkrMes) => number; kind: "flujo" | "cierre"; key: string; tot?: boolean };
-  const line = ({ lbl, f, kind, key, tot: isTot }: Line) => {
+  const [desglose, setDesglose] = useState(false);   // debajo de cada total, una fila por cuenta
+  /** Una fila de la tabla para un conjunto de cuentas (todas = total; una = desglose). */
+  const fila = ({ lbl, f, kind, key, tot: isTot }: Line, cs: typeof accs, sub = false) => {
     let tot = 0, ok = true; const cells = [];
-    const last = Math.max(0, ...accs.map((c) => rowsOf(c.id, year).at(-1)).map((r) => (r ? mOf(r) : 0)));
+    const last = Math.max(0, ...cs.map((c) => rowsOf(c.id, year).at(-1)).map((r) => (r ? mOf(r) : 0)));
     for (let m = 1; m <= 12; m++) {
       let v = 0, any = false;
-      accs.forEach((c) => { const r = rowsOf(c.id, year).find((d) => mOf(d) === m); if (!r) return; const u = f(r) || 0; if (kind === "cierre") { v += u; any = true; return; } if (!u) return; const cv = conv(u, year, m); if (cv.ok) { v += cv.v; any = true; } else ok = false; });
+      cs.forEach((c) => { const r = rowsOf(c.id, year).find((d) => mOf(d) === m); if (!r) return; const u = f(r) || 0; if (kind === "cierre") { v += u; any = true; return; } if (!u) return; const cv = conv(u, year, m); if (cv.ok) { v += cv.v; any = true; } else ok = false; });
       if (kind === "cierre" && any) { const cv = conv(v, year, m); if (m === last) tot = cv.ok ? cv.v : 0; v = cv.v; } else if (kind !== "cierre") tot += v;
-      cells.push(any ? <td key={m} className={"n" + (v < 0 ? " neg" : "")} style={{ cursor: "pointer", textDecoration: "underline dotted" }} onClick={() => drillTo(key, m)}>{vfmt(v)}</td> : <td key={m} className="n dim">—</td>);
+      cells.push(any ? <td key={m} className={"n" + (v < 0 ? " neg" : "")} style={{ cursor: "pointer", textDecoration: sub ? "none" : "underline dotted" }} onClick={() => drillTo(key, m)}>{vfmt(v)}</td> : <td key={m} className="n dim">—</td>);
     }
-    return <tr key={key} className={isTot ? "tot" : undefined}><td>{lbl}</td>{cells}<td className="n" style={{ fontWeight: 700 }}>{ok ? vfmt(tot) : <span className="badge" style={{ background: "var(--deu)" }}>s/TC</span>}</td></tr>;
+    const k = sub ? `${key}-${cs[0].id}` : key;
+    return <tr key={k} className={isTot && !sub ? "tot" : undefined} style={sub ? { fontSize: 12, opacity: 0.85 } : undefined}>
+      <td style={sub ? { paddingLeft: 18, whiteSpace: "nowrap" } : undefined}>{sub ? <><i style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: colorOf(cs[0]), marginRight: 5 }} />{nombre(cs[0])}</> : lbl}</td>
+      {cells}<td className="n" style={{ fontWeight: sub ? 500 : 700 }}>{ok ? vfmt(tot) : <span className="badge" style={{ background: "var(--deu)" }}>s/TC</span>}</td></tr>;
   };
+  const line = (l: Line) => desglose && accs.length > 1
+    ? <Fragment key={l.key}>{fila(l, accs)}{accs.filter((c) => rowsOf(c.id, year).length).map((c) => fila(l, [c], true))}</Fragment>
+    : fila(l, accs);
   const sec = (t: string) => <tr key={"s" + t} className="sec"><td colSpan={14}>{t}</td></tr>;
   const drillTo = (k: string, m: number) => {
     const parts = accs.map((c) => { const r = rowsOf(c.id, year).find((d) => mOf(d) === m); if (!r) return ""; const map: Record<string, string> = {
@@ -250,7 +258,11 @@ export function Inversiones({ initial }: { initial: InversionesData }) {
       </div>
 
       <div className="card">
-        <div className="ct"><span>Año {year} · {mode === "usd" ? "USD" : "MXN al FIX"}</span><span className="tag">toca una celda para ver de dónde sale</span></div>
+        <div className="ct"><span>Año {year} · {mode === "usd" ? "USD" : "MXN al FIX"}</span>
+          <span style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            {accs.length > 1 && <label style={{ display: "flex", gap: 5, alignItems: "center", margin: 0, fontSize: 12, cursor: "pointer" }}><input type="checkbox" checked={desglose} onChange={(e) => setDesglose(e.target.checked)} /> desglose por cuenta</label>}
+            <span className="tag">toca una celda para ver de dónde sale</span>
+          </span></div>
         <div className="tbl"><table>
           <thead><tr><th>Concepto</th>{MESN.map((m) => <th key={m} className="n">{m}</th>)}<th className="n">Año</th></tr></thead>
           <tbody>
