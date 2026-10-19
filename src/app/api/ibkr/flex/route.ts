@@ -9,23 +9,36 @@ export const maxDuration = 60;
  * Pide la Flex Query a IBKR (token y query por defecto en variables de entorno del servidor),
  * la convierte a la fila mensual del Panel y la guarda: ibkr_estados_mensuales + importaciones + saldo NAV.
  */
+/** Credenciales Flex: la principal (IBKR_FLEX_TOKEN / _QUERY_ID / _QUERY_MTD) y las extra con sufijo _2, _3… (otro login de IBKR). */
+function credenciales(hoy: boolean) {
+  const out: { token: string; queryId: string; etiqueta: string }[] = [];
+  for (const suf of ["", "_2", "_3", "_4"]) {
+    const token = process.env[`IBKR_FLEX_TOKEN${suf}`], q = process.env[hoy ? `IBKR_FLEX_QUERY_MTD${suf}` : `IBKR_FLEX_QUERY_ID${suf}`];
+    if (token && q) out.push({ token, queryId: q, etiqueta: suf ? `login ${suf.slice(1)}` : "login 1" });
+  }
+  return out;
+}
+
 export async function POST(req: Request) {
-  const token = process.env.IBKR_FLEX_TOKEN;
   const body = await req.json().catch(() => ({}));
   // hoy=true usa la query Month-to-Date (NAV al día); si no, la mensual (mes anterior)
-  const queryId = String(body?.queryId || (body?.hoy ? process.env.IBKR_FLEX_QUERY_MTD : process.env.IBKR_FLEX_QUERY_ID) || "");
-  if (!token || !queryId) return NextResponse.json({ error: "Faltan IBKR_FLEX_TOKEN / IBKR_FLEX_QUERY_ID en Vercel." }, { status: 503 });
+  const creds = body?.queryId && process.env.IBKR_FLEX_TOKEN ? [{ token: process.env.IBKR_FLEX_TOKEN, queryId: String(body.queryId), etiqueta: "login 1" }] : credenciales(!!body?.hoy);
+  if (!creds.length) return NextResponse.json({ error: "Faltan IBKR_FLEX_TOKEN / IBKR_FLEX_QUERY_ID en Vercel." }, { status: 503 });
 
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Sin sesión." }, { status: 401 });
 
   try {
-    const xml = await fetchFlex(token, queryId);
-    const rows = parseFlex(xml);
     const { data: cuentas } = await supabase.from("cuentas").select("id,nombre").eq("tipo", "inversion");
     const out = [];
+    const rows: (ReturnType<typeof parseFlex>[number] & { queryId: string })[] = [];
+    for (const cr of creds) {
+      try { parseFlex(await fetchFlex(cr.token, cr.queryId)).forEach((r) => rows.push({ ...r, queryId: cr.queryId })); }
+      catch (e) { if (creds.length === 1) throw e; out.push({ cuenta: cr.etiqueta, error: (e as Error).message }); }   // un login caído no tumba al otro
+    }
     for (const r of rows) {
+      const queryId = r.queryId;
       const c = (cuentas ?? []).find((x) => x.nombre.includes(r.cuenta));
       if (!c) { out.push({ cuenta: r.cuenta, error: "cuenta no encontrada en el CRM" }); continue; }
       const periodo = `${r.year}-${String(r.mes).padStart(2, "0")}-01`;

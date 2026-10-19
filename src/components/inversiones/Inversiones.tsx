@@ -63,7 +63,8 @@ export function Inversiones({ initial }: { initial: InversionesData }) {
   const mxN = Math.max(...allPts.map((p) => p[1]), 1), stepN = niceStep(mxN), maxN = Math.ceil(mxN / stepN) * stepN;
   const xN = (l: string) => P.l + (W - P.l - P.r) * labels.indexOf(l) / Math.max(1, labels.length - 1), yN = (v: number) => P.t + (H - P.t - P.b) * (1 - v / maxN);
   const gridN: number[] = []; for (let v = 0; v <= maxN; v += stepN) gridN.push(v);
-  const colorOf = (c: { titular: string }) => c.titular === "CABZ" ? "var(--c6)" : "var(--akela)";
+  const PALETA_MIAS = ["var(--c6)", "var(--nec)", "var(--gus)", "var(--deu)"];   // Akela siempre en su color; las tuyas, una cada una
+  const colorOf = (c: { id: string; titular: string }) => c.titular !== "CABZ" ? "var(--akela)" : PALETA_MIAS[initial.cuentasIbkr.filter((x) => x.titular === "CABZ").findIndex((x) => x.id === c.id) % PALETA_MIAS.length];
   const pct = (x: number | null) => (x == null ? "—" : (x >= 0 ? "+" : "−") + Math.abs(x * 100).toFixed(1) + " %");
   /** Rendimiento del periodo (Dietz modificado simple: los depósitos pesan medio periodo) entre dos meses de la serie. */
   const rendimiento = (cid: string, desde: string, hasta: string) => {
@@ -193,7 +194,7 @@ export function Inversiones({ initial }: { initial: InversionesData }) {
         <div className="g4">
           <div><label htmlFor="v-year">Año</label><select id="v-year" value={year} onChange={(e) => setYear(+e.target.value)}>{years.map((y) => <option key={y} value={y}>{y}</option>)}</select></div>
           <div><label htmlFor="v-mode">Moneda</label><select id="v-mode" value={mode} onChange={(e) => setMode(e.target.value as "mxn" | "usd")}><option value="mxn">MXN (al FIX del mes)</option><option value="usd">USD</option></select></div>
-          <div><label htmlFor="v-acc">Cuenta</label><select id="v-acc" value={acc} onChange={(e) => setAcc(e.target.value)}><option value="">Ambas</option>{initial.cuentasIbkr.map((c) => <option key={c.id} value={c.id}>{nombre(c)}</option>)}</select></div>
+          <div><label htmlFor="v-acc">Cuenta</label><select id="v-acc" value={acc} onChange={(e) => setAcc(e.target.value)}><option value="">Todas</option>{initial.cuentasIbkr.map((c) => <option key={c.id} value={c.id}>{nombre(c)}</option>)}</select></div>
           <div><label>&nbsp;</label>
             {initial.flex
               ? <button className="btn sm" type="button" style={{ width: "100%" }} onClick={() => traerFlex(false)} disabled={busy}>⟳ Traer de IBKR (Flex)</button>
