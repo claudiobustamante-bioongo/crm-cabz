@@ -52,11 +52,20 @@ export function Inversiones({ initial }: { initial: InversionesData }) {
 
   /* ---------- NAV chart (USD) ---------- */
   const W = 760, H = 200, P = { l: 60, r: 8, t: 10, b: 24 };
-  const [rango, setRango] = useState<12 | 0>(12);   // 12 = últimos 12 meses · 0 = todo
+  type Rango = "1m" | "3m" | "12m" | "ytd" | "todo";
+  const RANGOS: [Rango, string][] = [["1m", "Último mes"], ["3m", "Últimos 3 meses"], ["12m", "Últimos 12 meses"], ["ytd", "Año en curso"], ["todo", "Todo"]];
+  const [rango, setRango] = useState<Rango>("12m");
   const [hover, setHover] = useState<{ i: number; cid: string | null } | null>(null);
   const serie = (cid: string) => filas.filter((r) => r.cuenta_id === cid).sort((a, b) => a.periodo.localeCompare(b.periodo));
   const todosMeses = [...new Set(filas.map((r) => r.periodo.slice(0, 7)))].sort();
-  const labels = rango ? todosMeses.slice(-(rango + 1)) : todosMeses;   // 13 puntos = 12 variaciones
+  // N+1 puntos = N variaciones; YTD arranca en el cierre de diciembre anterior
+  const labels = (() => {
+    const n = { "1m": 1, "3m": 3, "12m": 12 }[rango as "1m" | "3m" | "12m"];
+    if (n) return todosMeses.slice(-(n + 1));
+    if (rango === "ytd") { const ult = todosMeses.at(-1) ?? ""; const i = todosMeses.indexOf(`${+ult.slice(0, 4) - 1}-12`); return i >= 0 ? todosMeses.slice(i) : todosMeses.filter((m) => m.startsWith(ult.slice(0, 4))); }
+    return todosMeses;
+  })();
+  const rangoLbl = RANGOS.find((r) => r[0] === rango)![1].toLowerCase();
   const enRango = (r: IbkrMes) => labels.includes(r.periodo.slice(0, 7));
   const pts = (cid: string) => serie(cid).filter(enRango).map((r) => [r.periodo.slice(0, 7), r.nav_final] as [string, number]);
   const allPts = initial.cuentasIbkr.flatMap((c) => pts(c.id));
@@ -227,14 +236,14 @@ export function Inversiones({ initial }: { initial: InversionesData }) {
         <div className="ct"><span>NAV por cuenta</span>
           <span style={{ display: "flex", gap: 10, alignItems: "center" }}>
             <span className="legend">{initial.cuentasIbkr.map((c) => { const r = labels.length > 1 ? rendimiento(c.id, labels[0], labels.at(-1)!) : null; return (
-              <span key={c.id} title={`Rendimiento ${rango ? "últimos 12 meses" : "del periodo"} neto de depósitos`}><i style={{ background: colorOf(c) }} />{nombre(c)} <b className={r == null ? "" : r < 0 ? "neg" : "pos"}>{pct(r)}</b></span>); })}</span>
-            <select value={rango} onChange={(e) => setRango(+e.target.value as 12 | 0)} style={{ padding: "3px 6px", fontSize: 12 }} aria-label="Rango"><option value={12}>Últimos 12 meses</option><option value={0}>Todo</option></select>
+              <span key={c.id} title={`Rendimiento ${rangoLbl}, neto de depósitos`}><i style={{ background: colorOf(c) }} />{nombre(c)} <b className={r == null ? "" : r < 0 ? "neg" : "pos"}>{pct(r)}</b></span>); })}</span>
+            <select value={rango} onChange={(e) => setRango(e.target.value as Rango)} style={{ padding: "3px 6px", fontSize: 12 }} aria-label="Rango">{RANGOS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
           </span>
         </div>
         <div style={{ position: "relative" }}>
         <svg className="chart" viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", cursor: "crosshair" }} role="img" aria-label="NAV mensual en USD" onMouseMove={onMove} onMouseLeave={() => setHover(null)}>
           {gridN.map((v) => <g key={v}><line x1={P.l} x2={W - P.r} y1={yN(v)} y2={yN(v)} stroke="var(--border-soft)" /><text x={P.l - 6} y={yN(v) + 4} textAnchor="end">{Math.round(v / 1000)}k</text></g>)}
-          {labels.map((l, i) => ((i % (rango ? 2 : 4) === 0 && labels.length - 1 - i >= 1) || i === labels.length - 1) ? <text key={l} x={xN(l)} y={H - 7} textAnchor="middle">{ml(l)}</text> : null)}
+          {labels.map((l, i) => { const paso = labels.length <= 6 ? 1 : labels.length <= 14 ? 2 : 4; return ((i % paso === 0 && labels.length - 1 - i >= 1) || i === labels.length - 1) ? <text key={l} x={xN(l)} y={H - 7} textAnchor="middle">{ml(l)}</text> : null; })}
           {hover && <line x1={xN(labels[hover.i])} x2={xN(labels[hover.i])} y1={P.t} y2={H - P.b} stroke="var(--ink)" strokeDasharray="3 3" opacity={0.5} />}
           {initial.cuentasIbkr.map((c) => { const p = pts(c.id); if (!p.length) return null; const e = p.at(-1)!; const d = p.map((q, i) => `${i ? "L" : "M"}${xN(q[0]).toFixed(1)},${yN(q[1]).toFixed(1)}`).join("");
             const dim = hover?.cid && hover.cid !== c.id; const hp = hover ? p.find((q) => q[0] === labels[hover.i]) : null; return (
@@ -254,7 +263,7 @@ export function Inversiones({ initial }: { initial: InversionesData }) {
           </div>
         )}
         </div>
-        <p className="hint">USD. Rendimiento neto de depósitos y retiros (Dietz modificado: los flujos pesan medio periodo); la leyenda muestra el de {rango ? "los últimos 12 meses" : "todo el periodo"}.</p>
+        <p className="hint">USD. Rendimiento neto de depósitos y retiros (Dietz modificado: los flujos pesan medio periodo); la leyenda muestra el de {rangoLbl}.</p>
       </div>
 
       <div className="card">
