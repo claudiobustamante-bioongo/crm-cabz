@@ -75,14 +75,23 @@ export function Inversiones({ initial }: { initial: InversionesData }) {
   const PALETA_MIAS = ["var(--c6)", "var(--nec)", "var(--gus)", "var(--deu)"];   // Akela siempre en su color; las tuyas, una cada una
   const colorOf = (c: { id: string; titular: string }) => c.titular !== "CABZ" ? "var(--akela)" : PALETA_MIAS[initial.cuentasIbkr.filter((x) => x.titular === "CABZ").findIndex((x) => x.id === c.id) % PALETA_MIAS.length];
   const pct = (x: number | null) => (x == null ? "—" : (x >= 0 ? "+" : "−") + Math.abs(x * 100).toFixed(1) + " %");
-  /** Rendimiento del periodo (Dietz modificado simple: los depósitos pesan medio periodo) entre dos meses de la serie. */
+  type Metodo = "twr" | "dietz" | "nav";
+  const [metodo, setMetodo] = useState<Metodo>("twr");
+  const METODOS: [Metodo, string, string][] = [
+    ["twr", "TWR", "Rendimiento ponderado por tiempo: encadena el rendimiento de cada mes, cada uno neto de sus depósitos y retiros. Es el rendimiento «limpio» de la gestión, independiente de cuándo metiste o sacaste dinero."],
+    ["dietz", "Dietz", "Dietz modificado: (NAV final − NAV inicial − flujos) / (NAV inicial + flujos/2). Un solo cálculo para todo el periodo."],
+    ["nav", "Var. NAV", "Variación simple del NAV: NAV final / NAV inicial − 1. Incluye depósitos y retiros como si fueran rendimiento."],
+  ];
+  /** Rendimiento entre dos meses de la serie según el método elegido. */
   const rendimiento = (cid: string, desde: string, hasta: string) => {
     const rs = serie(cid).filter((r) => r.periodo.slice(0, 7) >= desde && r.periodo.slice(0, 7) <= hasta);
     if (rs.length < 2) return null;
     const ini = rs[0].nav_final, fin = rs.at(-1)!.nav_final;
-    const dep = rs.slice(1).reduce((a, r) => a + (r.depositos || 0), 0);
-    const base = ini + dep / 2;
-    return base > 0 ? (fin - ini - dep) / base : null;
+    if (metodo === "nav") return ini > 0 ? fin / ini - 1 : null;
+    if (metodo === "dietz") { const dep = rs.slice(1).reduce((a, r) => a + (r.depositos || 0), 0); const base = ini + dep / 2; return base > 0 ? (fin - ini - dep) / base : null; }
+    let acum = 1;   // TWR: producto de (1 + r_mes), con los flujos del mes a medio mes
+    for (let i = 1; i < rs.length; i++) { const a = rs[i - 1].nav_final, b = rs[i].nav_final, d = rs[i].depositos || 0; const base = a + d / 2; if (base <= 0) return null; acum *= 1 + (b - a - d) / base; }
+    return acum - 1;
   };
   /** Rendimiento del mes (NAV fin vs NAV mes anterior, neto de depósitos del mes). */
   const rendMes = (cid: string, l: string) => { const i = todosMeses.indexOf(l); return i > 0 ? rendimiento(cid, todosMeses[i - 1], l) : null; };
@@ -236,8 +245,9 @@ export function Inversiones({ initial }: { initial: InversionesData }) {
         <div className="ct"><span>NAV por cuenta</span>
           <span style={{ display: "flex", gap: 10, alignItems: "center" }}>
             <span className="legend">{initial.cuentasIbkr.map((c) => { const r = labels.length > 1 ? rendimiento(c.id, labels[0], labels.at(-1)!) : null; return (
-              <span key={c.id} title={`Rendimiento ${rangoLbl}, neto de depósitos`}><i style={{ background: colorOf(c) }} />{nombre(c)} <b className={r == null ? "" : r < 0 ? "neg" : "pos"}>{pct(r)}</b></span>); })}</span>
+              <span key={c.id} title={`Rendimiento ${rangoLbl} (${METODOS.find((m) => m[0] === metodo)![1]})`}><i style={{ background: colorOf(c) }} />{nombre(c)} <b className={r == null ? "" : r < 0 ? "neg" : "pos"}>{pct(r)}</b></span>); })}</span>
             <select value={rango} onChange={(e) => setRango(e.target.value as Rango)} style={{ padding: "3px 6px", fontSize: 12 }} aria-label="Rango">{RANGOS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
+            <select value={metodo} onChange={(e) => setMetodo(e.target.value as Metodo)} style={{ padding: "3px 6px", fontSize: 12 }} aria-label="Método de rendimiento" title={METODOS.find((m) => m[0] === metodo)![2]}>{METODOS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
           </span>
         </div>
         <div style={{ position: "relative" }}>
@@ -263,7 +273,7 @@ export function Inversiones({ initial }: { initial: InversionesData }) {
           </div>
         )}
         </div>
-        <p className="hint">USD. Rendimiento neto de depósitos y retiros (Dietz modificado: los flujos pesan medio periodo); la leyenda muestra el de {rangoLbl}.</p>
+        <p className="hint">USD · {rangoLbl}. {METODOS.find((m) => m[0] === metodo)![2]}</p>
       </div>
 
       <div className="card">
