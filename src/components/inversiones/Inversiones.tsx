@@ -50,15 +50,38 @@ export function Inversiones({ initial }: { initial: InversionesData }) {
     cost = sum((c) => flujo(c, year, fCost)), nav = sum((c) => cierre(c, year, (r) => r.nav_final)), dep = sum((c) => flujo(c, year, (r) => r.depositos));
   const divB = sum((c) => flujo(c, year, (r) => Math.max(0, r.div_bruto))), divR = sum((c) => flujo(c, year, (r) => r.div_ret)), cup = sum((c) => flujo(c, year, (r) => Math.max(0, r.cupon)));
 
-  /* ---------- NAV chart (USD, todos los años) ---------- */
+  /* ---------- NAV chart (USD) ---------- */
   const W = 760, H = 200, P = { l: 60, r: 8, t: 10, b: 24 };
-  const pts = (cid: string) => filas.filter((r) => r.cuenta_id === cid).sort((a, b) => a.periodo.localeCompare(b.periodo)).map((r) => [r.periodo.slice(0, 7), r.nav_final] as [string, number]);
+  const [rango, setRango] = useState<12 | 0>(12);   // 12 = últimos 12 meses · 0 = todo
+  const [hover, setHover] = useState<{ i: number; cid: string | null } | null>(null);
+  const serie = (cid: string) => filas.filter((r) => r.cuenta_id === cid).sort((a, b) => a.periodo.localeCompare(b.periodo));
+  const todosMeses = [...new Set(filas.map((r) => r.periodo.slice(0, 7)))].sort();
+  const labels = rango ? todosMeses.slice(-(rango + 1)) : todosMeses;   // 13 puntos = 12 variaciones
+  const enRango = (r: IbkrMes) => labels.includes(r.periodo.slice(0, 7));
+  const pts = (cid: string) => serie(cid).filter(enRango).map((r) => [r.periodo.slice(0, 7), r.nav_final] as [string, number]);
   const allPts = initial.cuentasIbkr.flatMap((c) => pts(c.id));
-  const labels = [...new Set(allPts.map((p) => p[0]))].sort();
   const mxN = Math.max(...allPts.map((p) => p[1]), 1), stepN = niceStep(mxN), maxN = Math.ceil(mxN / stepN) * stepN;
   const xN = (l: string) => P.l + (W - P.l - P.r) * labels.indexOf(l) / Math.max(1, labels.length - 1), yN = (v: number) => P.t + (H - P.t - P.b) * (1 - v / maxN);
   const gridN: number[] = []; for (let v = 0; v <= maxN; v += stepN) gridN.push(v);
   const colorOf = (c: { titular: string }) => c.titular === "CABZ" ? "var(--c6)" : "var(--akela)";
+  const pct = (x: number | null) => (x == null ? "—" : (x >= 0 ? "+" : "−") + Math.abs(x * 100).toFixed(1) + " %");
+  /** Rendimiento del periodo (Dietz modificado simple: los depósitos pesan medio periodo) entre dos meses de la serie. */
+  const rendimiento = (cid: string, desde: string, hasta: string) => {
+    const rs = serie(cid).filter((r) => r.periodo.slice(0, 7) >= desde && r.periodo.slice(0, 7) <= hasta);
+    if (rs.length < 2) return null;
+    const ini = rs[0].nav_final, fin = rs.at(-1)!.nav_final;
+    const dep = rs.slice(1).reduce((a, r) => a + (r.depositos || 0), 0);
+    const base = ini + dep / 2;
+    return base > 0 ? (fin - ini - dep) / base : null;
+  };
+  /** Rendimiento del mes (NAV fin vs NAV mes anterior, neto de depósitos del mes). */
+  const rendMes = (cid: string, l: string) => { const i = todosMeses.indexOf(l); return i > 0 ? rendimiento(cid, todosMeses[i - 1], l) : null; };
+  const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    const box = e.currentTarget.getBoundingClientRect();
+    const x = ((e.clientX - box.left) / box.width) * W;
+    const i = Math.round(((x - P.l) / (W - P.l - P.r)) * Math.max(1, labels.length - 1));
+    setHover((h) => ({ i: Math.max(0, Math.min(labels.length - 1, i)), cid: h?.cid ?? null }));
+  };
 
   /* ---------- tabla principal ---------- */
   type Line = { lbl: string; f: (r: IbkrMes) => number; kind: "flujo" | "cierre"; key: string; tot?: boolean };
@@ -192,14 +215,37 @@ export function Inversiones({ initial }: { initial: InversionesData }) {
       </div>
 
       <div className="card">
-        <div className="ct"><span>NAV por cuenta</span><span className="legend">{initial.cuentasIbkr.map((c) => <span key={c.id}><i style={{ background: colorOf(c) }} />{nombre(c)}</span>)}</span></div>
-        <svg className="chart" viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto" }} role="img" aria-label="NAV mensual en USD">
+        <div className="ct"><span>NAV por cuenta</span>
+          <span style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <span className="legend">{initial.cuentasIbkr.map((c) => { const r = labels.length > 1 ? rendimiento(c.id, labels[0], labels.at(-1)!) : null; return (
+              <span key={c.id} title={`Rendimiento ${rango ? "últimos 12 meses" : "del periodo"} neto de depósitos`}><i style={{ background: colorOf(c) }} />{nombre(c)} <b className={r == null ? "" : r < 0 ? "neg" : "pos"}>{pct(r)}</b></span>); })}</span>
+            <select value={rango} onChange={(e) => setRango(+e.target.value as 12 | 0)} style={{ padding: "3px 6px", fontSize: 12 }} aria-label="Rango"><option value={12}>Últimos 12 meses</option><option value={0}>Todo</option></select>
+          </span>
+        </div>
+        <div style={{ position: "relative" }}>
+        <svg className="chart" viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", cursor: "crosshair" }} role="img" aria-label="NAV mensual en USD" onMouseMove={onMove} onMouseLeave={() => setHover(null)}>
           {gridN.map((v) => <g key={v}><line x1={P.l} x2={W - P.r} y1={yN(v)} y2={yN(v)} stroke="var(--border-soft)" /><text x={P.l - 6} y={yN(v) + 4} textAnchor="end">{Math.round(v / 1000)}k</text></g>)}
-          {labels.map((l, i) => ((i % 4 === 0 && labels.length - 1 - i >= 2) || i === labels.length - 1) ? <text key={l} x={xN(l)} y={H - 7} textAnchor="middle">{ml(l)}</text> : null)}
-          {initial.cuentasIbkr.map((c) => { const p = pts(c.id); if (!p.length) return null; const e = p.at(-1)!; return (
-            <g key={c.id}><path d={p.map((q, i) => `${i ? "L" : "M"}${xN(q[0]).toFixed(1)},${yN(q[1]).toFixed(1)}`).join("")} fill="none" stroke={colorOf(c)} strokeWidth={2.5} /><circle cx={xN(e[0])} cy={yN(e[1])} r={4} fill={colorOf(c)} stroke="var(--ink)" /></g>); })}
+          {labels.map((l, i) => ((i % (rango ? 2 : 4) === 0 && labels.length - 1 - i >= 1) || i === labels.length - 1) ? <text key={l} x={xN(l)} y={H - 7} textAnchor="middle">{ml(l)}</text> : null)}
+          {hover && <line x1={xN(labels[hover.i])} x2={xN(labels[hover.i])} y1={P.t} y2={H - P.b} stroke="var(--ink)" strokeDasharray="3 3" opacity={0.5} />}
+          {initial.cuentasIbkr.map((c) => { const p = pts(c.id); if (!p.length) return null; const e = p.at(-1)!; const d = p.map((q, i) => `${i ? "L" : "M"}${xN(q[0]).toFixed(1)},${yN(q[1]).toFixed(1)}`).join("");
+            const dim = hover?.cid && hover.cid !== c.id; const hp = hover ? p.find((q) => q[0] === labels[hover.i]) : null; return (
+            <g key={c.id} opacity={dim ? 0.3 : 1} onMouseEnter={() => setHover((h) => ({ i: h?.i ?? labels.length - 1, cid: c.id }))} onMouseLeave={() => setHover((h) => (h ? { ...h, cid: null } : null))}>
+              <path d={d} fill="none" stroke="transparent" strokeWidth={14} />
+              <path d={d} fill="none" stroke={colorOf(c)} strokeWidth={hover?.cid === c.id ? 3.5 : 2.5} />
+              <circle cx={xN(e[0])} cy={yN(e[1])} r={4} fill={colorOf(c)} stroke="var(--ink)" />
+              {hp && <circle cx={xN(hp[0])} cy={yN(hp[1])} r={4.5} fill="var(--paper, #fff)" stroke={colorOf(c)} strokeWidth={2.5} />}
+            </g>); })}
         </svg>
-        <p className="hint">USD, todos los meses importados.</p>
+        {hover && (
+          <div style={{ position: "absolute", top: 6, left: xN(labels[hover.i]) / W > 0.6 ? 8 : undefined, right: xN(labels[hover.i]) / W > 0.6 ? undefined : 8, background: "var(--paper, #fff)", border: "1.5px solid var(--ink)", borderRadius: 8, padding: "6px 10px", fontSize: 12, boxShadow: "2px 2px 0 var(--ink)", pointerEvents: "none", minWidth: 220 }}>
+            <div style={{ fontWeight: 700, marginBottom: 2 }}>{ml(labels[hover.i])}</div>
+            {initial.cuentasIbkr.filter((c) => !hover.cid || hover.cid === c.id).map((c) => { const q = pts(c.id).find((x) => x[0] === labels[hover.i]); if (!q) return null; const rm = rendMes(c.id, labels[hover.i]); const rp = rendimiento(c.id, labels[0], labels[hover.i]); return (
+              <div key={c.id} style={{ display: "flex", gap: 8, justifyContent: "space-between" }}><span><i style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: colorOf(c), marginRight: 4 }} />{nombre(c)}</span>
+                <span>{usd(q[1])} · mes <b className={rm == null ? "" : rm < 0 ? "neg" : "pos"}>{pct(rm)}</b> · desde {ml(labels[0])} <b className={rp == null ? "" : rp < 0 ? "neg" : "pos"}>{pct(rp)}</b></span></div>); })}
+          </div>
+        )}
+        </div>
+        <p className="hint">USD. Rendimiento neto de depósitos y retiros (Dietz modificado: los flujos pesan medio periodo); la leyenda muestra el de {rango ? "los últimos 12 meses" : "todo el periodo"}.</p>
       </div>
 
       <div className="card">
