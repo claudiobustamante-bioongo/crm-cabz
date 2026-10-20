@@ -7,17 +7,20 @@ import { createClient } from "@/lib/supabase/server";
  * El token vive en BANXICO_TOKEN (variable de entorno del servidor; nunca en la base ni en el navegador).
  */
 export async function GET(req: Request) {
-  const token = process.env.BANXICO_TOKEN;
+  const token = (process.env.BANXICO_TOKEN ?? "").trim().replace(/^["']|["']$/g, "");
   if (!token) return NextResponse.json({ error: "BANXICO_TOKEN no configurado en Vercel." }, { status: 503 });
+  if (!/^[0-9a-f]{64}$/i.test(token)) return NextResponse.json({ error: `BANXICO_TOKEN con formato raro (${token.length} caracteres; debe ser 64 hex). Revísalo en Vercel.` }, { status: 503 });
 
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Sin sesión." }, { status: 401 });
 
   const anio = Number(new URL(req.url).searchParams.get("anio")) || new Date().getFullYear();
-  const url = `https://www.banxico.org.mx/SieAPIRest/service/v1/series/SF43718/datos/${anio}-01-01/${anio}-12-31`;
+  const hoy = new Date().toLocaleDateString("sv-SE", { timeZone: "America/Mexico_City" });
+  const fin = anio < +hoy.slice(0, 4) ? `${anio}-12-31` : hoy;   // Banxico rechaza rangos que terminan en el futuro
+  const url = `https://www.banxico.org.mx/SieAPIRest/service/v1/series/SF43718/datos/${anio}-01-01/${fin}`;
   const r = await fetch(url, { headers: { "Bmx-Token": token, Accept: "application/json" }, cache: "no-store" });
-  if (!r.ok) return NextResponse.json({ error: `Banxico respondió ${r.status}` }, { status: 502 });
+  if (!r.ok) { const t = (await r.text().catch(() => "")).replace(/\s+/g, " ").slice(0, 200); return NextResponse.json({ error: `Banxico respondió ${r.status}${t ? `: ${t}` : ""}` }, { status: 502 }); }
   const j = await r.json();
   const datos: { fecha: string; dato: string }[] = j?.bmx?.series?.[0]?.datos ?? [];
 
