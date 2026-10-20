@@ -118,7 +118,7 @@ export function Contabilidad({ initial }: { initial: ContabilidadData }) {
       </div>
 
       <h2>2 · Inversiones · {anio}</h2>
-      <TablaAnual filas={initial.ibkr} cuentas={initial.cuentasIbkr} tc={initial.tc} anio={anio} alto="60vh" titulo={`Resumen mensual IBKR · ${anio} · MXN al FIX (todas las cuentas)`} />
+      <TablaAnual filas={initial.ibkr} cuentas={initial.cuentasIbkr} tc={initial.tc} anio={anio} titulo={`Resumen mensual IBKR · ${anio} · MXN al FIX (todas las cuentas)`} />
       <div className="card">
         <div className="ct"><span>Por cuenta (USD y MXN al FIX de cada mes)</span><span className="tag">art. 142 fr. V dividendos · art. 143 intereses · Cap. IV enajenación</span></div>
         <div className="tbl"><table>

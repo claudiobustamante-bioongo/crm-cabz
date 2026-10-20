@@ -88,3 +88,6 @@ button.link{background:none;border:none;color:var(--gold-dark);font-weight:700;c
 .tbl-fija thead th:first-child,.tbl-fija.ultima thead th:last-child{z-index:4}
 .tbl-fija tr.sec td{font-size:1.05em;font-weight:700}
 .tbl-fija tr.sec td:first-child{white-space:nowrap}
+.tbl-seccion{margin-top:10px}.tbl-seccion-t{font-family:"Klee One",cursive;color:var(--gold-dark);font-weight:700;font-size:14px;background:var(--cream);padding:7px 10px;border-radius:8px 8px 0 0;border-bottom:2px solid var(--ink)}
+.tbl-seccion .tbl-scroll-top{height:12px;margin:0;background:var(--cream)}
+.tbl-cols table{table-layout:fixed;min-width:1360px}.tbl-cols th:first-child,.tbl-cols td:first-child{width:200px}.tbl-cols th:last-child,.tbl-cols td:last-child{width:120px}

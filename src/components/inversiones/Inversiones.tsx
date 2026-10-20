@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { CuentaSaldo, IbkrMes, InversionesData, TipoCambio } from "@/lib/types";
 import { MESN, fmt, hoy, ml, niceStep } from "@/lib/format";
 import { parseIBCSV } from "@/lib/ibkr";
-import { TablaFija } from "@/components/TablaFija";
+import { TablaFija, Seccion } from "@/components/TablaFija";
 
 const usd = (n: number) => (n < 0 ? "-" : "") + "US$" + Math.abs(n).toLocaleString("en-US", { maximumFractionDigits: 0 });
 const fReal = (r: IbkrMes) => r.real_etf + r.real_acc + r.real_opc + r.real_fx + r.real_bono;
@@ -125,7 +125,6 @@ export function Inversiones({ initial }: { initial: InversionesData }) {
   const line = (l: Line) => desglose && accs.length > 1
     ? <Fragment key={l.key}>{fila(l, accs)}{accs.filter((c) => rowsOf(c.id, year).length).map((c) => fila(l, [c], true))}</Fragment>
     : fila(l, accs);
-  const sec = (t: string) => <tr key={"s" + t} className="sec"><td>{t}</td>{Array.from({ length: 13 }, (_, i) => <td key={i} />)}</tr>;
   const drillTo = (k: string, m: number) => {
     const parts = accs.map((c) => { const r = rowsOf(c.id, year).find((d) => mOf(d) === m); if (!r) return ""; const map: Record<string, string> = {
       div: `dividendos ${r.div_bruto} − retención ${r.div_ret}`, cup: `cupones ${r.cupon}`, re: `ETFs ${r.real_etf}`, ra: `acciones ${r.real_acc}`, ro: `opciones ${r.real_opc}`, rf: `forex ${r.real_fx}`, rb: `bonos ${r.real_bono}`,
@@ -306,31 +305,20 @@ export function Inversiones({ initial }: { initial: InversionesData }) {
             {accs.length > 1 && <label style={{ display: "flex", gap: 5, alignItems: "center", margin: 0, fontSize: 12, cursor: "pointer" }}><input type="checkbox" checked={desglose} onChange={(e) => setDesglose(e.target.checked)} /> desglose por cuenta</label>}
             <span className="tag">toca una celda para ver de dónde sale</span>
           </span></div>
-        <TablaFija alto="72vh"><table>
-          <thead><tr><th>Concepto</th>{MESN.map((m) => <th key={m} className="n">{m}</th>)}<th className="n">Año</th></tr></thead>
-          <tbody>
-            {sec("1 · Ingresos pasivos (dividendos netos + cupones)")}
-            {line({ lbl: "Dividendos netos", f: (r) => r.div_bruto - r.div_ret, kind: "flujo", key: "div" })}
-            {line({ lbl: "Cupones de bonos", f: (r) => r.cupon, kind: "flujo", key: "cup" })}
-            {sec("2 · Realizada (Cap. IV · solo en la anual)")}
-            {line({ lbl: "ETFs", f: (r) => r.real_etf, kind: "flujo", key: "re" })}
-            {line({ lbl: "Acciones", f: (r) => r.real_acc, kind: "flujo", key: "ra" })}
-            {line({ lbl: "Opciones", f: (r) => r.real_opc, kind: "flujo", key: "ro" })}
-            {line({ lbl: "Forex", f: (r) => r.real_fx, kind: "flujo", key: "rf" })}
-            {line({ lbl: "Bonos", f: (r) => r.real_bono, kind: "flujo", key: "rb" })}
-            {line({ lbl: "Subtotal realizada", f: fReal, kind: "flujo", key: "real", tot: true })}
-            {sec("3 · No realizada (saldo de cierre, no suma)")}
-            {line({ lbl: "Subtotal no realizada", f: fNR, kind: "cierre", key: "nr" })}
-            {sec("4 · Costos")}
-            {line({ lbl: "Comisiones", f: (r) => r.comisiones, kind: "flujo", key: "cm" })}
-            {line({ lbl: "Interés bróker", f: (r) => r.int_broker, kind: "flujo", key: "ib" })}
-            {sec("5 · NAV y depósitos")}
-            {line({ lbl: "NAV total (cierre)", f: (r) => r.nav_final, kind: "cierre", key: "nav" })}
-            {line({ lbl: "Depósitos netos", f: (r) => r.depositos, kind: "flujo", key: "dep" })}
-            {sec("TC FIX usado")}
-            <tr><td>MXN/USD</td>{MESN.map((_, i) => <td key={i} className={"n" + (tcReal(year, i + 1) ? "" : " neg")} title={tcReal(year, i + 1) ? "FIX del mes" : "sin FIX: usa el último conocido"}>{tcOf(year, i + 1) ? tcOf(year, i + 1).toFixed(4) + (tcReal(year, i + 1) ? "" : "*") : "—"}</td>)}<td /></tr>
-          </tbody>
-        </table></TablaFija>
+        {([
+          ["1 · Ingresos pasivos (dividendos netos + cupones)", [line({ lbl: "Dividendos netos", f: (r) => r.div_bruto - r.div_ret, kind: "flujo", key: "div" }), line({ lbl: "Cupones de bonos", f: (r) => r.cupon, kind: "flujo", key: "cup" })]],
+          ["2 · Realizada (Cap. IV · solo en la anual)", [line({ lbl: "ETFs", f: (r) => r.real_etf, kind: "flujo", key: "re" }), line({ lbl: "Acciones", f: (r) => r.real_acc, kind: "flujo", key: "ra" }), line({ lbl: "Opciones", f: (r) => r.real_opc, kind: "flujo", key: "ro" }), line({ lbl: "Forex", f: (r) => r.real_fx, kind: "flujo", key: "rf" }), line({ lbl: "Bonos", f: (r) => r.real_bono, kind: "flujo", key: "rb" }), line({ lbl: "Subtotal realizada", f: fReal, kind: "flujo", key: "real", tot: true })]],
+          ["3 · No realizada (saldo de cierre, no suma)", [line({ lbl: "Subtotal no realizada", f: fNR, kind: "cierre", key: "nr" })]],
+          ["4 · Costos", [line({ lbl: "Comisiones", f: (r) => r.comisiones, kind: "flujo", key: "cm" }), line({ lbl: "Interés bróker", f: (r) => r.int_broker, kind: "flujo", key: "ib" })]],
+          ["5 · NAV y depósitos", [line({ lbl: "NAV total (cierre)", f: (r) => r.nav_final, kind: "cierre", key: "nav" }), line({ lbl: "Depósitos netos", f: (r) => r.depositos, kind: "flujo", key: "dep" })]],
+          ["TC FIX usado", [<tr key="tc"><td>MXN/USD</td>{MESN.map((_, i) => <td key={i} className={"n" + (tcReal(year, i + 1) ? "" : " neg")} title={tcReal(year, i + 1) ? "FIX del mes" : "sin FIX: usa el último conocido"}>{tcOf(year, i + 1) ? tcOf(year, i + 1).toFixed(4) + (tcReal(year, i + 1) ? "" : "*") : "—"}</td>)}<td /></tr>]],
+        ] as [string, React.ReactNode[]][]).map(([t, filas]) => (
+          <Seccion key={t} titulo={t}>
+            <div className="tbl-cols"><TablaFija grupo="inv-anual"><table>
+              <thead><tr><th>Concepto</th>{MESN.map((m) => <th key={m} className="n">{m}</th>)}<th className="n">Año</th></tr></thead>
+              <tbody>{filas}</tbody>
+            </table></TablaFija></div>
+          </Seccion>))}
         {drill && <div className="note">{drill}</div>}
       </div>
 

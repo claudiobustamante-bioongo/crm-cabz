@@ -3,14 +3,14 @@ import { Fragment, useState } from "react";
 import type { IbkrMes, TipoCambio } from "@/lib/types";
 import { MESN, fmt } from "@/lib/format";
 import { tcFn, yOf, mOf } from "@/lib/contab";
-import { TablaFija } from "@/components/TablaFija";
+import { TablaFija, Seccion } from "@/components/TablaFija";
 
 const usd = (n: number) => (n < 0 ? "-" : "") + "US$" + Math.abs(n).toLocaleString("en-US", { maximumFractionDigits: 0 });
 type Cta = { id: string; nombre: string; titular: string };
 type Linea = { lbl: string; f: (r: IbkrMes) => number; kind: "flujo" | "cierre"; tot?: boolean };
 
 /** Tabla anual de IBKR (como en Inversiones): totales de todas las cuentas y, opcionalmente, desglose por cuenta. Sin estado externo. */
-export function TablaAnual({ filas, cuentas, tc, anio, moneda = "mxn", alto = "70vh", titulo }: { filas: IbkrMes[]; cuentas: Cta[]; tc: TipoCambio[]; anio: number; moneda?: "mxn" | "usd"; alto?: string; titulo?: string }) {
+export function TablaAnual({ filas, cuentas, tc, anio, moneda = "mxn", titulo }: { filas: IbkrMes[]; cuentas: Cta[]; tc: TipoCambio[]; anio: number; moneda?: "mxn" | "usd"; titulo?: string }) {
   const [desglose, setDesglose] = useState(false);
   const fix = tcFn(tc);
   const conv = (u: number, m: number) => (moneda === "usd" ? u : u * fix(anio, m));
@@ -35,7 +35,6 @@ export function TablaAnual({ filas, cuentas, tc, anio, moneda = "mxn", alto = "7
       {cells}<td className={"n" + (tot < 0 ? " neg" : "")} style={{ fontWeight: 700 }}>{vf(tot)}</td></tr>;
   };
   const line = (l: Linea) => desglose && accs.length > 1 ? <Fragment key={l.lbl}>{fila(l, accs)}{accs.map((c) => fila(l, [c], true))}</Fragment> : fila(l, accs);
-  const sec = (t: string) => <tr key={"s" + t} className="sec"><td>{t}</td>{Array.from({ length: 13 }, (_, i) => <td key={i} />)}</tr>;
   const fReal = (r: IbkrMes) => r.real_etf + r.real_acc + r.real_opc + r.real_fx + r.real_bono;
   const fNR = (r: IbkrMes) => r.nr_etf + r.nr_acc + r.nr_opc + r.nr_fx + r.nr_bono;
 
@@ -43,30 +42,20 @@ export function TablaAnual({ filas, cuentas, tc, anio, moneda = "mxn", alto = "7
     <div className="card">
       <div className="ct"><span>{titulo ?? `Año ${anio} · ${moneda === "usd" ? "USD" : "MXN al FIX"}`}</span>
         {accs.length > 1 && <label style={{ display: "flex", gap: 5, alignItems: "center", margin: 0, fontSize: 12, cursor: "pointer" }}><input type="checkbox" checked={desglose} onChange={(e) => setDesglose(e.target.checked)} /> desglose por cuenta</label>}</div>
-      <TablaFija alto={alto}><table>
-        <thead><tr><th>Concepto</th>{MESN.map((m) => <th key={m} className="n">{m}</th>)}<th className="n">Año</th></tr></thead>
-        <tbody>
-          {sec("1 · Ingresos pasivos (dividendos netos + cupones)")}
-          {line({ lbl: "Dividendos netos", f: (r) => r.div_bruto - r.div_ret, kind: "flujo" })}
-          {line({ lbl: "Cupones de bonos", f: (r) => r.cupon, kind: "flujo" })}
-          {sec("2 · Realizada (Cap. IV)")}
-          {line({ lbl: "ETFs", f: (r) => r.real_etf, kind: "flujo" })}
-          {line({ lbl: "Acciones", f: (r) => r.real_acc, kind: "flujo" })}
-          {line({ lbl: "Opciones", f: (r) => r.real_opc, kind: "flujo" })}
-          {line({ lbl: "Forex", f: (r) => r.real_fx, kind: "flujo" })}
-          {line({ lbl: "Bonos", f: (r) => r.real_bono, kind: "flujo" })}
-          {line({ lbl: "Subtotal realizada", f: fReal, kind: "flujo", tot: true })}
-          {sec("3 · No realizada (saldo de cierre, no suma)")}
-          {line({ lbl: "Subtotal no realizada", f: fNR, kind: "cierre" })}
-          {sec("4 · Costos")}
-          {line({ lbl: "Comisiones", f: (r) => r.comisiones, kind: "flujo" })}
-          {line({ lbl: "Interés bróker", f: (r) => r.int_broker, kind: "flujo" })}
-          {sec("5 · NAV y depósitos")}
-          {line({ lbl: "NAV total (cierre)", f: (r) => r.nav_final, kind: "cierre" })}
-          {line({ lbl: "Depósitos netos", f: (r) => r.depositos, kind: "flujo" })}
-          {moneda === "mxn" && <>{sec("TC FIX usado")}<tr><td>MXN/USD</td>{Array.from({ length: 12 }, (_, i) => <td key={i} className="n">{fix(anio, i + 1) ? fix(anio, i + 1).toFixed(4) : "—"}</td>)}<td /></tr></>}
-        </tbody>
-      </table></TablaFija>
+      {([
+        ["1 · Ingresos pasivos (dividendos netos + cupones)", [line({ lbl: "Dividendos netos", f: (r) => r.div_bruto - r.div_ret, kind: "flujo" }), line({ lbl: "Cupones de bonos", f: (r) => r.cupon, kind: "flujo" })]],
+        ["2 · Realizada (Cap. IV)", [line({ lbl: "ETFs", f: (r) => r.real_etf, kind: "flujo" }), line({ lbl: "Acciones", f: (r) => r.real_acc, kind: "flujo" }), line({ lbl: "Opciones", f: (r) => r.real_opc, kind: "flujo" }), line({ lbl: "Forex", f: (r) => r.real_fx, kind: "flujo" }), line({ lbl: "Bonos", f: (r) => r.real_bono, kind: "flujo" }), line({ lbl: "Subtotal realizada", f: fReal, kind: "flujo", tot: true })]],
+        ["3 · No realizada (saldo de cierre, no suma)", [line({ lbl: "Subtotal no realizada", f: fNR, kind: "cierre" })]],
+        ["4 · Costos", [line({ lbl: "Comisiones", f: (r) => r.comisiones, kind: "flujo" }), line({ lbl: "Interés bróker", f: (r) => r.int_broker, kind: "flujo" })]],
+        ["5 · NAV y depósitos", [line({ lbl: "NAV total (cierre)", f: (r) => r.nav_final, kind: "cierre" }), line({ lbl: "Depósitos netos", f: (r) => r.depositos, kind: "flujo" })]],
+        ...(moneda === "mxn" ? [["TC FIX usado", [<tr key="tc"><td>MXN/USD</td>{Array.from({ length: 12 }, (_, i) => <td key={i} className="n">{fix(anio, i + 1) ? fix(anio, i + 1).toFixed(4) : "—"}</td>)}<td /></tr>]] as [string, React.ReactNode[]]] : []),
+      ] as [string, React.ReactNode[]][]).map(([t, filas]) => (
+        <Seccion key={t} titulo={t}>
+          <div className="tbl-cols"><TablaFija grupo={"anual-" + anio}><table>
+            <thead><tr><th>Concepto</th>{MESN.map((m) => <th key={m} className="n">{m}</th>)}<th className="n">Año</th></tr></thead>
+            <tbody>{filas}</tbody>
+          </table></TablaFija></div>
+        </Seccion>))}
     </div>
   );
 }
