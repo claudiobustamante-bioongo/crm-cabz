@@ -128,7 +128,8 @@ export function Inversiones({ initial }: { initial: InversionesData }) {
   const drillTo = (k: string, m: number) => {
     const parts = accs.map((c) => { const r = rowsOf(c.id, year).find((d) => mOf(d) === m); if (!r) return ""; const map: Record<string, string> = {
       div: `dividendos ${r.div_bruto} − retención ${r.div_ret}`, cup: `cupones ${r.cupon}`, re: `ETFs ${r.real_etf}`, ra: `acciones ${r.real_acc}`, ro: `opciones ${r.real_opc}`, rf: `forex ${r.real_fx}`, rb: `bonos ${r.real_bono}`,
-      real: `${r.real_etf}+${r.real_acc}+${r.real_opc}+${r.real_fx}+${r.real_bono}`, nr: `${r.nr_etf}+${r.nr_acc}+${r.nr_opc}+${r.nr_fx}+${r.nr_bono}`, cm: `comisiones ${r.comisiones}`, ib: `interés ${r.int_broker}`,
+      real: `${r.real_etf}+${r.real_acc}+${r.real_opc}+${r.real_fx}+${r.real_bono}`, nr: `${r.nr_etf}+${r.nr_acc}+${r.nr_opc}+${r.nr_fx}+${r.nr_bono}`,
+      nre: `no realizada ETFs ${r.nr_etf}`, nra: `no realizada acciones ${r.nr_acc}`, nro: `no realizada opciones ${r.nr_opc}`, nrf: `no realizada forex ${r.nr_fx}`, nrb: `no realizada bonos ${r.nr_bono}`, cm: `comisiones ${r.comisiones}`, ib: `interés ${r.int_broker}`,
       nav: `efectivo ${r.nav_efe} + acciones ${r.nav_acc} + opciones ${r.nav_opc} + bonos ${r.nav_bono} + devengos ${r.nav_dev}`, dep: `depósitos ${r.depositos}` }; return `${nombre(c)}: ${map[k]} USD${r.fuente ? ` · ${r.fuente}` : ""}`; }).filter(Boolean);
     setDrill(`${MESN[m - 1]} ${year} · ${parts.join(" · ")} · × TC ${tcOf(year, m) || "—"}`);
   };
@@ -308,7 +309,7 @@ export function Inversiones({ initial }: { initial: InversionesData }) {
         {([
           ["1 · Ingresos pasivos (dividendos netos + cupones)", [line({ lbl: "Dividendos netos", f: (r) => r.div_bruto - r.div_ret, kind: "flujo", key: "div" }), line({ lbl: "Cupones de bonos", f: (r) => r.cupon, kind: "flujo", key: "cup" })]],
           ["2 · Realizada (Cap. IV · solo en la anual)", [line({ lbl: "ETFs", f: (r) => r.real_etf, kind: "flujo", key: "re" }), line({ lbl: "Acciones", f: (r) => r.real_acc, kind: "flujo", key: "ra" }), line({ lbl: "Opciones", f: (r) => r.real_opc, kind: "flujo", key: "ro" }), line({ lbl: "Forex", f: (r) => r.real_fx, kind: "flujo", key: "rf" }), line({ lbl: "Bonos", f: (r) => r.real_bono, kind: "flujo", key: "rb" }), line({ lbl: "Subtotal realizada", f: fReal, kind: "flujo", key: "real", tot: true })]],
-          ["3 · No realizada (saldo de cierre, no suma)", [line({ lbl: "Subtotal no realizada", f: fNR, kind: "cierre", key: "nr" })]],
+          ["3 · No realizada (saldo de cierre, no suma)", [line({ lbl: "ETFs", f: (r) => r.nr_etf, kind: "cierre", key: "nre" }), line({ lbl: "Acciones", f: (r) => r.nr_acc, kind: "cierre", key: "nra" }), line({ lbl: "Opciones", f: (r) => r.nr_opc, kind: "cierre", key: "nro" }), line({ lbl: "Forex", f: (r) => r.nr_fx, kind: "cierre", key: "nrf" }), line({ lbl: "Bonos", f: (r) => r.nr_bono, kind: "cierre", key: "nrb" }), line({ lbl: "Subtotal no realizada", f: fNR, kind: "cierre", key: "nr", tot: true })]],
           ["4 · Costos", [line({ lbl: "Comisiones", f: (r) => r.comisiones, kind: "flujo", key: "cm" }), line({ lbl: "Interés bróker", f: (r) => r.int_broker, kind: "flujo", key: "ib" })]],
           ["5 · NAV y depósitos", [line({ lbl: "NAV total (cierre)", f: (r) => r.nav_final, kind: "cierre", key: "nav" }), line({ lbl: "Depósitos netos", f: (r) => r.depositos, kind: "flujo", key: "dep" })]],
           ["TC FIX usado", [<tr key="tc"><td>MXN/USD</td>{MESN.map((_, i) => <td key={i} className={"n" + (tcReal(year, i + 1) ? "" : " neg")} title={tcReal(year, i + 1) ? "FIX del mes" : "sin FIX: usa el último conocido"}>{tcOf(year, i + 1) ? tcOf(year, i + 1).toFixed(4) + (tcReal(year, i + 1) ? "" : "*") : "—"}</td>)}<td /></tr>]],
