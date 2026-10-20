@@ -7,6 +7,7 @@ import type { AjusteFiscal, ContabilidadData, Obligacion } from "@/lib/types";
 import { fmt, MESN } from "@/lib/format";
 import { resumenInversiones, perdidasPorAmortizar, mesContab, PERDIDA_ANIOS, facturasDeducibles, DED_LABEL } from "@/lib/contab";
 import { FORMA_PAGO } from "@/lib/cfdi";
+import { TablaFija } from "@/components/TablaFija";
 
 const usd = (n: number) => (n < 0 ? "-" : "") + "US$" + Math.abs(n).toLocaleString("en-US", { maximumFractionDigits: 0 });
 const EST: Record<Obligacion["estado"], [string, string]> = { pendiente: ["Pendiente", "var(--gus)"], presentada: ["Presentada", "var(--nec)"], pagada: ["Pagada", "var(--aho)"], no_aplica: ["No aplica", "var(--gray-soft)"] };
@@ -103,7 +104,7 @@ export function Contabilidad({ initial }: { initial: ContabilidadData }) {
 
       <div className="card">
         <div className="ct"><span>Mensual · actividad empresarial e IVA</span><span className="tag">emitidas netas de notas de crédito</span></div>
-        <div className="tbl"><table>
+        <TablaFija fijarUltima={false}><table>
           <thead><tr><th>Mes</th><th className="n">Honorarios</th><th className="n">IVA trasladado</th><th className="n">Ret. ISR</th><th className="n">Ret. IVA</th><th className="n">Gastos facturados</th><th className="n">IVA acreditable</th><th className="n">IVA a cargo (favor)</th><th className="n">Sueldo bruto</th><th className="n">ISR nómina</th></tr></thead>
           <tbody>
             {MESN.map((m, i) => { const x = M(i + 1); if (!x) return null; const ivaNeto = x.emitidas_iva - x.emitidas_ret_iva - x.recibidas_iva_acreditable; return (
@@ -111,7 +112,7 @@ export function Contabilidad({ initial }: { initial: ContabilidadData }) {
                 <td className="n"><Link href={`/facturacion/detalle?anio=${anio}&mes=${anio}-${String(i + 1).padStart(2, "0")}&tipo=recibida`} title="Ver las facturas de este mes">{fmt(x.recibidas_total)}</Link></td><td className="n">{fmt(x.recibidas_iva_acreditable)}</td><td className={"n " + (ivaNeto < 0 ? "pos" : "")}>{fmt(ivaNeto)}</td><td className="n" title={x.nomina_de_ingresos ? "Capturado en Ingresos: neto (sin CFDI de nómina, no hay bruto ni ISR)" : "Del CFDI de nómina"}>{fmt(x.nomina_bruto)}{x.nomina_de_ingresos ? "*" : ""}</td><td className="n">{x.nomina_de_ingresos ? "—" : fmt(x.nomina_isr)}</td></tr>); })}
             <tr className="tot"><td>Año</td><td className="n">{fmt(sumM("emitidas_subtotal"))}</td><td className="n">{fmt(sumM("emitidas_iva"))}</td><td className="n">{fmt(sumM("emitidas_ret_isr"))}</td><td className="n">{fmt(sumM("emitidas_ret_iva"))}</td><td className="n">{fmt(sumM("recibidas_total"))}</td><td className="n">{fmt(sumM("recibidas_iva_acreditable"))}</td><td className="n">{fmt(sumM("emitidas_iva") - sumM("emitidas_ret_iva") - sumM("recibidas_iva_acreditable"))}</td><td className="n">{fmt(sumM("nomina_bruto"))}</td><td className="n">{fmt(sumM("nomina_isr"))}</td></tr>
           </tbody>
-        </table></div>
+        </table></TablaFija>
         <p className="hint"><button className="link" type="button" onClick={recalcularNomina} disabled={busy}>Releer XML de nómina</button> (corrige ISR y bruto de recibos ya cargados). * = tomado de lo capturado en Ingresos porque ese mes no hay CFDI en el CRM (en nómina solo se conoce el neto; sube los XML de nómina para bruto e ISR). «Gastos facturados» abre las facturas del mes con sus XML, PDF y Drive. IVA acreditable = IVA de recibidas a tu RFC con uso distinto de D0x/S01; el contador decide qué es estrictamente indispensable.</p>
       </div>
 
@@ -160,7 +161,7 @@ export function Contabilidad({ initial }: { initial: ContabilidadData }) {
       </div>
       <div className="card">
         <div className="ct"><span>Detalle de lo que se deduce</span><span className="tag">una fila por factura · XML · PDF · Drive · gasto ligado</span></div>
-        <div className="tbl" style={{ fontSize: 12 }}><table>
+        <TablaFija fijarUltima={false} fontSize={12}><table>
           <thead><tr><th>Categoría (art. 151)</th><th>Fecha</th><th>Emisor</th><th>RFC</th><th>Concepto del CFDI</th><th>Uso</th><th>Forma de pago</th><th>Rubro en Gastos</th><th>Gasto ligado</th><th className="n">Total MXN</th><th>UUID</th><th>Archivos</th></tr></thead>
           <tbody>
             {Object.entries(dedFilas.reduce<Record<string, typeof dedFilas>>((a, f) => { (a[f.cat] ??= []).push(f); return a; }, {})).map(([cat, fs]) => (
@@ -177,7 +178,7 @@ export function Contabilidad({ initial }: { initial: ContabilidadData }) {
               </Fragment>))}
             {!dedFilas.length && <tr><td colSpan={12} className="hint">Sin facturas deducibles en {anio}.</td></tr>}
           </tbody>
-        </table></div>
+        </table></TablaFija>
         <p className="hint">Requisitos que revisa el contador: factura a tu RFC, pagada con medio distinto a efectivo (forma de pago 01 no deduce salvo hospital/medicinas), vigente en el SAT. Las tachadas están anuladas por nota de crédito. PPR/AFORE se acreditan con la constancia anual de la operadora, no con CFDI.</p>
       </div>
 

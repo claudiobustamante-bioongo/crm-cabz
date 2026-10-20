@@ -71,3 +71,13 @@ details.method summary{cursor:pointer;padding:12px 18px;list-style:none;font-fam
 button.link{background:none;border:none;color:var(--gold-dark);font-weight:700;cursor:pointer;font-size:13px;text-decoration:underline}
 .catbar:focus-visible{outline:3px solid var(--gold)}
 .spin{opacity:.6;pointer-events:none}
+/* tablas anchas: columna fija + barra superior */
+.tbl-scroll-top{overflow-x:auto;overflow-y:hidden;height:14px;margin-bottom:2px}
+.tbl-scroll-top::-webkit-scrollbar{height:10px}
+.tbl-fija table{font-size:inherit}
+.tbl-fija td:first-child,.tbl-fija th:first-child{position:sticky;left:0;z-index:2;background:var(--paper,#fff);box-shadow:2px 0 0 var(--border-soft)}
+.tbl-fija.ultima td:last-child,.tbl-fija.ultima th:last-child{position:sticky;right:0;z-index:2;background:var(--paper,#fff);box-shadow:-2px 0 0 var(--border-soft)}
+.tbl-fija tr.tot td:first-child,.tbl-fija tr.tot td:last-child{background:var(--beige)}
+.tbl-fija tr.sec td:first-child{background:var(--cream)}
+.tbl-fija tr.lead td{font-weight:700;color:var(--ink);font-size:1.06em}
+.tbl-fija tr.sub td{font-size:.92em;opacity:.85}

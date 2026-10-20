@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { Cfdi, FacturacionData } from "@/lib/types";
 import { fmt, fmt2, mesKey, ml } from "@/lib/format";
 import { parseCfdi, FORMA_PAGO } from "@/lib/cfdi";
+import { TablaFija } from "@/components/TablaFija";
 
 const TIPO_LABEL = { emitida: "Emitida", recibida: "Recibida", nomina: "Nómina" } as const;
 const TIPO_COLOR = { emitida: "var(--c6)", recibida: "var(--aho)", nomina: "var(--nec)" } as const;
@@ -357,7 +358,7 @@ export function Facturacion({ initial, vista = "resumen", filtro }: { initial: F
           <div><label htmlFor="f-mes">Mes</label><select id="f-mes" value={fmes} onChange={(e) => setFmes(e.target.value)}><option value="">Todos</option>{meses.map((k) => <option key={k} value={k}>{ml(k)}</option>)}</select></div>
           <div><label htmlFor="f-est">Estado</label><select id="f-est" value={festado} onChange={(e) => setFestado(e.target.value)}><option value="">Todos</option>{(Object.keys(ESTADO) as Cfdi["estado"][]).map((k) => <option key={k} value={k}>{ESTADO[k][0]}</option>)}</select></div>
         </div>
-        <div className="tbl" style={{ fontSize: 12 }}><table>
+        <TablaFija fontSize={12}><table>
           <thead><tr>{COLS.map((c) => <th key={c[0]} className={["Subtotal", "IVA", "Ret. ISR", "Ret. IVA", "Total", "Total en MXN", "Tipo de cambio"].includes(c[0]) ? "n" : undefined}>{c[0]}</th>)}<th>Estado</th><th>Acciones</th></tr></thead>
           <tbody>
             {lista.map((c) => (
@@ -396,7 +397,7 @@ export function Facturacion({ initial, vista = "resumen", filtro }: { initial: F
             ))}
             {!lista.length && <tr><td colSpan={30} className="hint">Sin facturas{cfdis.length ? " con esos filtros" : " en " + initial.anio}.</td></tr>}
           </tbody>
-        </table></div>
+        </table></TablaFija>
         <p className="hint">«Drive ↗» abre el archivo; «Drive ?» busca el UUID en tu Drive para que pegues el link en la celda. Vencimiento, link y notas se editan en la celda (se guardan al salir). Confianza «alta (XML)» = leída del XML timbrado.</p>
       </div>
 

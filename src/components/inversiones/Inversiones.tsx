@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { CuentaSaldo, IbkrMes, InversionesData, TipoCambio } from "@/lib/types";
 import { MESN, fmt, hoy, ml, niceStep } from "@/lib/format";
 import { parseIBCSV } from "@/lib/ibkr";
+import { TablaFija } from "@/components/TablaFija";
 
 const usd = (n: number) => (n < 0 ? "-" : "") + "US$" + Math.abs(n).toLocaleString("en-US", { maximumFractionDigits: 0 });
 const fReal = (r: IbkrMes) => r.real_etf + r.real_acc + r.real_opc + r.real_fx + r.real_bono;
@@ -116,7 +117,8 @@ export function Inversiones({ initial }: { initial: InversionesData }) {
       cells.push(any ? <td key={m} className={"n" + (v < 0 ? " neg" : "")} style={{ cursor: "pointer", textDecoration: sub ? "none" : "underline dotted" }} onClick={() => drillTo(key, m)}>{vfmt(v)}</td> : <td key={m} className="n dim">—</td>);
     }
     const k = sub ? `${key}-${cs[0].id}` : key;
-    return <tr key={k} className={isTot && !sub ? "tot" : undefined} style={sub ? { fontSize: 12, opacity: 0.85 } : undefined}>
+    const cls = [isTot && !sub ? "tot" : "", sub ? "sub" : desglose && accs.length > 1 ? "lead" : ""].filter(Boolean).join(" ") || undefined;
+    return <tr key={k} className={cls}>
       <td style={sub ? { paddingLeft: 18, whiteSpace: "nowrap" } : undefined}>{sub ? <><i style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: colorOf(cs[0]), marginRight: 5 }} />{nombre(cs[0])}</> : lbl}</td>
       {cells}<td className="n" style={{ fontWeight: sub ? 500 : 700 }}>{ok ? vfmt(tot) : <span className="badge" style={{ background: "var(--deu)" }}>s/TC</span>}</td></tr>;
   };
@@ -304,7 +306,7 @@ export function Inversiones({ initial }: { initial: InversionesData }) {
             {accs.length > 1 && <label style={{ display: "flex", gap: 5, alignItems: "center", margin: 0, fontSize: 12, cursor: "pointer" }}><input type="checkbox" checked={desglose} onChange={(e) => setDesglose(e.target.checked)} /> desglose por cuenta</label>}
             <span className="tag">toca una celda para ver de dónde sale</span>
           </span></div>
-        <div className="tbl"><table>
+        <TablaFija><table>
           <thead><tr><th>Concepto</th>{MESN.map((m) => <th key={m} className="n">{m}</th>)}<th className="n">Año</th></tr></thead>
           <tbody>
             {sec("1 · Ingresos pasivos (dividendos netos + cupones)")}
@@ -328,7 +330,7 @@ export function Inversiones({ initial }: { initial: InversionesData }) {
             {sec("TC FIX usado")}
             <tr><td>MXN/USD</td>{MESN.map((_, i) => <td key={i} className={"n" + (tcReal(year, i + 1) ? "" : " neg")} title={tcReal(year, i + 1) ? "FIX del mes" : "sin FIX: usa el último conocido"}>{tcOf(year, i + 1) ? tcOf(year, i + 1).toFixed(4) + (tcReal(year, i + 1) ? "" : "*") : "—"}</td>)}<td /></tr>
           </tbody>
-        </table></div>
+        </table></TablaFija>
         {drill && <div className="note">{drill}</div>}
       </div>
 
