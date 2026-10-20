@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Asignacion, Catalogo, Cfdi, CfdiMensual, Cuenta, DeduccionAnual, Evento, FacturaExt, FacturacionData, GastoSinCfdi, GastosData, IbkrMes, Ingreso, IngresosData, InversionesData, Movimiento, NetWorth, Rubro, TipoCambio } from "./types";
+import type { AjusteFiscal, Asignacion, Catalogo, Cfdi, CfdiMensual, ContabMes, ContabilidadData, Cuenta, DeduccionAnual, Evento, FacturaExt, FacturacionData, GastoSinCfdi, GastosData, IbkrMes, Ingreso, IngresosData, InversionesData, Movimiento, NetWorth, Obligacion, Rubro, TipoCambio } from "./types";
 
 const TIPOS_GASTO = ["gasto", "ahorro", "abono_deuda"];
 
@@ -151,5 +151,41 @@ export async function loadFacturacion(supabase: SupabaseClient, anio: number): P
     drive: !!(process.env.GOOGLE_SERVICE_ACCOUNT_JSON && process.env.DRIVE_FACTURAS_FOLDER_ID),
     ultimaSync: sync.data?.procesado_en ?? null,
     ingresoAnual, uma: UMA_DIARIA,
+  };
+}
+
+export async function loadContabilidad(supabase: SupabaseClient, anio: number): Promise<ContabilidadData> {
+  const desde = `${anio}-01-01`, hasta = `${anio}-12-31`;
+  const num = (r: Record<string, unknown>) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, typeof v === "string" && /^-?\d+(\.\d+)?$/.test(v) && !["serie", "folio", "uuid"].includes(k) ? Number(v) : v]));
+  const [cfg, mensual, cfdis, cuentas, ibkr, tc, ded, ext, aj, ob, anios] = await Promise.all([
+    supabase.from("app_config").select("rfc_propio").maybeSingle(),
+    supabase.from("v_contab_mensual").select("*").order("anio").order("mes"),
+    supabase.from("v_cfdi").select("*").gte("fecha", desde).lte("fecha", hasta).order("fecha").range(0, 4999),
+    supabase.from("cuentas").select("id,nombre,tipo,pagadores!cuentas_titular_id_fkey(codigo)").eq("activa", true).eq("tipo", "inversion").order("nombre"),
+    supabase.from("ibkr_estados_mensuales").select("id,cuenta_id,periodo,real_etf,real_acc,real_opc,real_fx,real_bono,nr_etf,nr_acc,nr_opc,nr_fx,nr_bono,div_bruto,div_ret,cupon,cupon_ret,comisiones,int_broker,depositos,nav_efe,nav_acc,nav_opc,nav_bono,nav_dev,nav_final,fuente").order("periodo").range(0, 4999),
+    supabase.from("tipos_cambio").select("fecha,moneda,tc_mxn,fuente").eq("moneda", "USD").order("fecha"),
+    supabase.from("v_deducciones_anual").select("*").eq("anio", anio),
+    supabase.from("v_facturas_ext").select("*").gte("mes", desde).lte("mes", hasta).order("mes"),
+    supabase.from("ajustes_fiscales").select("*").order("anio"),
+    supabase.from("obligaciones_fiscales").select("*").eq("anio", anio).order("vence"),
+    supabase.from("anios").select("anio").order("anio"),
+  ]);
+  type CRow = { id: string; nombre: string; pagadores: { codigo: string } | { codigo: string }[] | null };
+  const listaAnios = new Set<number>(must<{ anio: number }[]>(anios, "anios").map((a) => a.anio));
+  must<Record<string, unknown>[]>(mensual, "contab").forEach((m) => listaAnios.add(Number(m.anio)));
+  must<Record<string, unknown>[]>(ibkr, "ibkr").forEach((r) => listaAnios.add(+String(r.periodo).slice(0, 4)));
+  listaAnios.add(anio);
+  return {
+    anio, anios: [...listaAnios].sort(), rfcPropio: cfg.data?.rfc_propio ?? null,
+    mensual: must<Record<string, unknown>[]>(mensual, "contab").map(num) as unknown as ContabMes[],
+    cfdis: must<Record<string, unknown>[]>(cfdis, "cfdi").map(num) as unknown as Cfdi[],
+    cuentasIbkr: must<CRow[]>(cuentas, "cuentas").map((c) => ({ id: c.id, nombre: c.nombre, titular: (Array.isArray(c.pagadores) ? c.pagadores[0]?.codigo : c.pagadores?.codigo) ?? "" })),
+    ibkr: must<Record<string, unknown>[]>(ibkr, "ibkr").map(num) as unknown as IbkrMes[],
+    tc: must<TipoCambio[]>(tc, "tipos_cambio").map((t) => ({ ...t, tc_mxn: Number(t.tc_mxn) })),
+    deducciones: must<Record<string, unknown>[]>(ded, "deducciones").map(num) as unknown as DeduccionAnual[],
+    extranjeras: must<FacturaExt[]>(ext, "extranjeras"),
+    ajustes: must<Record<string, unknown>[]>(aj, "ajustes").map(num) as unknown as AjusteFiscal[],
+    obligaciones: must<Record<string, unknown>[]>(ob, "obligaciones").map(num) as unknown as Obligacion[],
+    uma: UMA_DIARIA,
   };
 }
