@@ -194,7 +194,7 @@ export interface FacturacionData {
 }
 
 /* ---------- Contabilidad (para el contador) ---------- */
-export interface ContabMes { anio: number; mes: number; emitidas_subtotal: number; emitidas_iva: number; emitidas_ret_isr: number; emitidas_ret_iva: number; emitidas_n: number; recibidas_total: number; recibidas_iva: number; recibidas_iva_acreditable: number; recibidas_n: number; nomina_neto: number; nomina_bruto: number; nomina_isr: number; nomina_n: number }
+export interface ContabMes { anio: number; mes: number; emitidas_subtotal: number; emitidas_iva: number; emitidas_ret_isr: number; emitidas_ret_iva: number; emitidas_n: number; recibidas_total: number; recibidas_iva: number; recibidas_iva_acreditable: number; recibidas_n: number; nomina_neto: number; nomina_bruto: number; nomina_isr: number; nomina_n: number; emitidas_de_ingresos?: boolean; nomina_de_ingresos?: boolean }
 export interface AjusteFiscal { id: string; anio: number; tipo: "perdida_acciones" | "perdida_actividad" | "otro"; concepto: string; monto: number; moneda: string; amortizado: number; notas: string | null }
 export interface Obligacion { id: string; anio: number; mes: number; obligacion: string; vence: string; estado: "pendiente" | "presentada" | "pagada" | "no_aplica"; monto: number | null; notas: string | null }
 export interface ContabilidadData {

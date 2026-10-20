@@ -4,10 +4,10 @@ import { Facturacion } from "@/components/facturacion/Facturacion";
 
 export const dynamic = "force-dynamic";
 
-export default async function DetallePage({ searchParams }: { searchParams: Promise<{ anio?: string }> }) {
-  const { anio } = await searchParams;
+export default async function DetallePage({ searchParams }: { searchParams: Promise<{ anio?: string; mes?: string; tipo?: string; q?: string }> }) {
+  const { anio, mes, tipo, q } = await searchParams;
   const year = Number(anio) || new Date().getFullYear();
   const supabase = await createClient();
   const data = await loadFacturacion(supabase, year);
-  return <Facturacion initial={data} vista="detalle" />;
+  return <Facturacion initial={data} vista="detalle" filtro={{ mes, tipo, q }} />;
 }

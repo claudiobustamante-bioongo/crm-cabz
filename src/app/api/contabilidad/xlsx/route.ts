@@ -139,7 +139,7 @@ export async function GET(req: Request) {
 
   /* ---------- 7. Pérdidas ---------- */
   const wp = wb.addWorksheet("Pérdidas");
-  title(wp, "Pérdidas por amortizar · enajenación de acciones (cuentas propias)", `Art. 129 LISR: la pérdida de un ejercicio se aplica contra ganancias de los ${PERDIDA_ANIOS} siguientes. Cálculo automático + ajustes manuales (filas 'ajuste').`);
+  title(wp, "Pérdidas por amortizar · enajenación de acciones (todas las cuentas)", `Art. 129 LISR: la pérdida de un ejercicio se aplica contra ganancias de los ${PERDIDA_ANIOS} siguientes. Cálculo automático + ajustes manuales (filas 'ajuste').`);
   head(wp, 3, ["Ejercicio", "Concepto", "Resultado realizado MXN", "Pérdida", "Aplicada", "Remanente", "Vence", "Origen"], [10, 50, 22, 16, 16, 16, 9, 9]);
   perdidas.forEach((p, k) => { const r = wp.getRow(4 + k); r.values = [p.anio, p.concepto, p.origen === "ibkr" ? p.resultado : null, p.perdida || null, p.aplicada || null, p.remanente || null, p.vence || null, p.origen]; [3, 4, 5, 6].forEach((c) => (r.getCell(c).numFmt = MXN)); band(wp, 4 + k); if (p.origen === "ajuste") r.getCell(2).fill = { type: "pattern", pattern: "solid", fgColor: { argb: INPUT } }; });
   if (perdidas.length) { const r = wp.getRow(5 + perdidas.length); r.getCell(1).value = "Remanente total"; r.getCell(6).value = { formula: `SUM(F4:F${3 + perdidas.length})` }; r.getCell(6).numFmt = MXN; r.font = { bold: true }; r.fill = { type: "pattern", pattern: "solid", fgColor: { argb: TOT } }; }

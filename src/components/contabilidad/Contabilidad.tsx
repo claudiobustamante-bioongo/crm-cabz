@@ -84,7 +84,7 @@ export function Contabilidad({ initial }: { initial: ContabilidadData }) {
 
       <h2>1 · Ingresos del ejercicio</h2>
       <div className="stat-row">
-        <div className="stat"><div className="v">{fmt(sumM("nomina_bruto"))}</div><div className="l">Sueldos brutos · ISR ret. {fmt(sumM("nomina_isr"))}</div></div>
+        <div className="stat"><div className="v">{fmt(sumM("nomina_bruto"))}</div><div className="l">Sueldos {initial.mensual.some((x) => x.anio === anio && x.nomina_de_ingresos) ? "(neto capturado)" : "brutos"} · ISR ret. {fmt(sumM("nomina_isr"))}</div></div>
         <div className="stat"><div className="v">{fmt(sumM("emitidas_subtotal"))}</div><div className="l">Honorarios facturados · {sumM("emitidas_n")} CFDI</div></div>
         <div className="stat"><div className="v">{fmt(sumM("emitidas_iva"))}</div><div className="l">IVA trasladado</div></div>
         <div className="stat"><div className="v">{fmt(sumM("emitidas_ret_isr"))}</div><div className="l">ISR retenido por clientes</div></div>
@@ -98,12 +98,12 @@ export function Contabilidad({ initial }: { initial: ContabilidadData }) {
           <thead><tr><th>Mes</th><th className="n">Honorarios</th><th className="n">IVA trasladado</th><th className="n">Ret. ISR</th><th className="n">Ret. IVA</th><th className="n">Gastos facturados</th><th className="n">IVA acreditable</th><th className="n">IVA a cargo (favor)</th><th className="n">Sueldo bruto</th><th className="n">ISR nómina</th></tr></thead>
           <tbody>
             {MESN.map((m, i) => { const x = M(i + 1); if (!x) return null; const ivaNeto = x.emitidas_iva - x.emitidas_ret_iva - x.recibidas_iva_acreditable; return (
-              <tr key={m}><td>{m} {String(anio).slice(2)}</td><td className="n">{fmt(x.emitidas_subtotal)}</td><td className="n">{fmt(x.emitidas_iva)}</td><td className="n">{fmt(x.emitidas_ret_isr)}</td><td className="n">{fmt(x.emitidas_ret_iva)}</td>
-                <td className="n">{fmt(x.recibidas_total)}</td><td className="n">{fmt(x.recibidas_iva_acreditable)}</td><td className={"n " + (ivaNeto < 0 ? "pos" : "")}>{fmt(ivaNeto)}</td><td className="n">{fmt(x.nomina_bruto)}</td><td className="n">{fmt(x.nomina_isr)}</td></tr>); })}
+              <tr key={m}><td>{m} {String(anio).slice(2)}</td><td className="n" title={x.emitidas_de_ingresos ? "Capturado en Ingresos (sin CFDI emitido en el CRM)" : "De los CFDI emitidos"}>{fmt(x.emitidas_subtotal)}{x.emitidas_de_ingresos ? "*" : ""}</td><td className="n">{fmt(x.emitidas_iva)}</td><td className="n">{fmt(x.emitidas_ret_isr)}</td><td className="n">{fmt(x.emitidas_ret_iva)}</td>
+                <td className="n"><Link href={`/facturacion/detalle?anio=${anio}&mes=${anio}-${String(i + 1).padStart(2, "0")}&tipo=recibida`} title="Ver las facturas de este mes">{fmt(x.recibidas_total)}</Link></td><td className="n">{fmt(x.recibidas_iva_acreditable)}</td><td className={"n " + (ivaNeto < 0 ? "pos" : "")}>{fmt(ivaNeto)}</td><td className="n" title={x.nomina_de_ingresos ? "Capturado en Ingresos: neto (sin CFDI de nómina, no hay bruto ni ISR)" : "Del CFDI de nómina"}>{fmt(x.nomina_bruto)}{x.nomina_de_ingresos ? "*" : ""}</td><td className="n">{x.nomina_de_ingresos ? "—" : fmt(x.nomina_isr)}</td></tr>); })}
             <tr className="tot"><td>Año</td><td className="n">{fmt(sumM("emitidas_subtotal"))}</td><td className="n">{fmt(sumM("emitidas_iva"))}</td><td className="n">{fmt(sumM("emitidas_ret_isr"))}</td><td className="n">{fmt(sumM("emitidas_ret_iva"))}</td><td className="n">{fmt(sumM("recibidas_total"))}</td><td className="n">{fmt(sumM("recibidas_iva_acreditable"))}</td><td className="n">{fmt(sumM("emitidas_iva") - sumM("emitidas_ret_iva") - sumM("recibidas_iva_acreditable"))}</td><td className="n">{fmt(sumM("nomina_bruto"))}</td><td className="n">{fmt(sumM("nomina_isr"))}</td></tr>
           </tbody>
         </table></div>
-        <p className="hint">IVA acreditable = IVA de facturas recibidas a tu RFC con uso distinto de D0x/S01 (las personales no acreditan). El contador decide qué gasto es estrictamente indispensable; el detalle está en <Link href={`/facturacion/detalle?anio=${anio}`}>Facturación › Detalle</Link> y en el Excel.</p>
+        <p className="hint">* = tomado de lo capturado en Ingresos porque ese mes no hay CFDI en el CRM (en nómina solo se conoce el neto; sube los XML de nómina para bruto e ISR). «Gastos facturados» abre las facturas del mes con sus XML, PDF y Drive. IVA acreditable = IVA de recibidas a tu RFC con uso distinto de D0x/S01; el contador decide qué es estrictamente indispensable.</p>
       </div>
 
       <h2>2 · Inversiones · {anio}</h2>
@@ -122,7 +122,7 @@ export function Contabilidad({ initial }: { initial: ContabilidadData }) {
       </div>
 
       <div className="card">
-        <div className="ct"><span>Pérdidas por amortizar · cuentas propias</span><span className="tag">art. 129: {PERDIDA_ANIOS} ejercicios</span></div>
+        <div className="ct"><span>Pérdidas por amortizar · todas las cuentas</span><span className="tag">art. 129: {PERDIDA_ANIOS} ejercicios</span></div>
         <div className="tbl"><table>
           <thead><tr><th>Ejercicio</th><th>Concepto</th><th className="n">Resultado realizado</th><th className="n">Pérdida</th><th className="n">Aplicada</th><th className="n">Remanente</th><th>Vence</th><th></th></tr></thead>
           <tbody>

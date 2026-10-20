@@ -12,14 +12,14 @@ const TIPO_COLOR = { emitida: "var(--c6)", recibida: "var(--aho)", nomina: "var(
 const ESTADO = { nueva: ["Nueva", "var(--gus)"], ligada: ["Ligada", "var(--nec)"], revisar: ["Revisar", "var(--deu)"], sin_gasto: ["Sin gasto", "var(--gray-soft)"] } as const;
 const DED_LABEL: Record<string, string> = { gmm: "Primas de gastos médicos mayores", medico: "Honorarios médicos, dentales y hospital", ppr: "Aportaciones a PPR / AFORE voluntaria", funeral: "Gastos funerarios", colegiatura: "Colegiaturas", hipoteca: "Intereses hipotecarios", donativo: "Donativos" };
 
-export function Facturacion({ initial, vista = "resumen" }: { initial: FacturacionData; vista?: "resumen" | "detalle" }) {
+export function Facturacion({ initial, vista = "resumen", filtro }: { initial: FacturacionData; vista?: "resumen" | "detalle"; filtro?: { mes?: string; tipo?: string; q?: string } }) {
   const base = vista === "detalle" ? "/facturacion/detalle" : "/facturacion";
   const router = useRouter();
   const supabase = createClient();
   const [cfdis, setCfdis] = useState<Cfdi[]>(initial.cfdis.filter((c) => c.tipo !== "emitida"));
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState("");
-  const [ftipo, setFtipo] = useState(""); const [fmes, setFmes] = useState(""); const [festado, setFestado] = useState(""); const [q, setQ] = useState("");
+  const [ftipo, setFtipo] = useState(filtro?.tipo ?? ""); const [fmes, setFmes] = useState(filtro?.mes ?? ""); const [festado, setFestado] = useState(""); const [q, setQ] = useState(filtro?.q ?? "");
   const [creando, setCreando] = useState<Cfdi | null>(null);
   const [cMsi, setCMsi] = useState(0);   // 0 = un solo cargo; N = meses sin intereses
   const [cCuenta, setCCuenta] = useState(initial.cuentas.find((c) => c.nombre === "AMEX")?.id ?? initial.cuentas[0]?.id ?? "");

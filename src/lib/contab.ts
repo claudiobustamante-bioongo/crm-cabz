@@ -51,11 +51,11 @@ export interface PerdidaFila { anio: number; resultado: number; perdida: number;
 /**
  * Pérdidas por amortizar (Cap. IV, enajenación de acciones/ETFs; art. 129): cada año con resultado realizado negativo
  * genera una pérdida que se aplica contra ganancias de los siguientes PERDIDA_ANIOS ejercicios, en orden (FIFO).
- * Solo cuentas del titular. Los ajustes manuales tipo 'perdida_acciones' entran como pérdidas adicionales de su año.
+ * Consolidado de todas las cuentas (o solo un titular si se indica). Los ajustes manuales tipo 'perdida_acciones' entran como pérdidas adicionales de su año.
  */
-export function perdidasPorAmortizar(inv: InvAnual[], ajustes: AjusteFiscal[], titular = "CABZ") {
+export function perdidasPorAmortizar(inv: InvAnual[], ajustes: AjusteFiscal[], titular?: string) {
   const porAnio: Record<number, number> = {};
-  inv.filter((i) => i.titular === titular).forEach((i) => { porAnio[i.anio] = (porAnio[i.anio] ?? 0) + i.mxn.realizada; });
+  inv.filter((i) => !titular || i.titular === titular).forEach((i) => { porAnio[i.anio] = (porAnio[i.anio] ?? 0) + i.mxn.realizada; });
   const anios = [...new Set([...Object.keys(porAnio).map(Number), ...ajustes.filter((a) => a.tipo === "perdida_acciones").map((a) => a.anio)])].sort();
   const filas: PerdidaFila[] = [];
   const pool: { anio: number; rem: number; idx: number }[] = [];
@@ -65,7 +65,7 @@ export function perdidasPorAmortizar(inv: InvAnual[], ajustes: AjusteFiscal[], t
     let gan = Math.max(0, res);
     for (const p of pool) { if (p.rem <= 0 || y > p.anio + PERDIDA_ANIOS || y <= p.anio) continue; const ap = Math.min(p.rem, gan); p.rem -= ap; gan -= ap; filas[p.idx].aplicada += ap; filas[p.idx].remanente = p.rem; }
     // 2) la pérdida del año entra al pool
-    if (res < 0) { filas.push({ anio: y, resultado: res, perdida: -res, aplicada: 0, remanente: -res, vence: y + PERDIDA_ANIOS, origen: "ibkr", concepto: "Pérdida realizada IBKR (cuentas propias)" }); pool.push({ anio: y, rem: -res, idx: filas.length - 1 }); }
+    if (res < 0) { filas.push({ anio: y, resultado: res, perdida: -res, aplicada: 0, remanente: -res, vence: y + PERDIDA_ANIOS, origen: "ibkr", concepto: "Pérdida realizada IBKR (todas las cuentas)" }); pool.push({ anio: y, rem: -res, idx: filas.length - 1 }); }
     else filas.push({ anio: y, resultado: res, perdida: 0, aplicada: 0, remanente: 0, vence: 0, origen: "ibkr", concepto: `Ganancia realizada ${res > 0 ? `· absorbe ${(Math.max(0, res) - gan).toFixed(0)} de pérdidas previas` : ""}` });
     for (const a of ajustes.filter((a) => a.tipo === "perdida_acciones" && a.anio === y)) {
       filas.push({ anio: y, resultado: 0, perdida: a.monto, aplicada: a.amortizado, remanente: a.monto - a.amortizado, vence: y + PERDIDA_ANIOS, origen: "ajuste", concepto: a.concepto });
