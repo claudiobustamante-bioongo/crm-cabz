@@ -210,6 +210,28 @@ export function Inversiones({ initial }: { initial: InversionesData }) {
   };
 
   const nw = initial.netWorth;
+  /** Net worth al último día hábil: NAV de hoy en IBKR (query Month to Date, todos los logins) + FIX de Banxico más reciente; luego recarga. */
+  const actualizarHoy = async () => {
+    setBusy(true);
+    const partes: string[] = [];
+    try {
+      if (initial.flexHoy) {
+        const r = await fetch("/api/ibkr/flex", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hoy: true }) });
+        const j = await r.json(); if (!r.ok) throw new Error(j.error || r.statusText);
+        const ok = (j.filas as { cuenta: string; error?: string }[]).filter((f) => !f.error);
+        partes.push(`IBKR: ${ok.map((f) => f.cuenta.replace(/^IBKR /, "")).join(", ") || "sin cuentas"}`);
+      }
+      if (initial.banxico) {
+        const y = new Date().getFullYear();
+        const r = await fetch(`/api/tc?anio=${y}`); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.statusText);
+        const ult = (j.rows as { fuente: string }[]).at(-1)?.fuente?.replace("Banxico FIX cierre ", "") ?? "";
+        partes.push(`FIX al ${ult}`);
+      }
+      aviso(`Actualizado · ${partes.join(" · ")}. Recargando…`);
+      setTimeout(() => window.location.reload(), 2000);
+    } catch (e) { aviso("No se pudo actualizar: " + (e as Error).message); } finally { setBusy(false); }
+  };
+  const fechaNw = retiro.filter((c) => c.titular === "CABZ" && c.fecha).map((c) => c.fecha!).sort().at(-1);
   const rows2 = initial.cuentasIbkr.flatMap((c) => years.filter((y) => rowsOf(c.id, y).length).map((y) => ({ c, y })));
 
   return (
@@ -367,7 +389,8 @@ export function Inversiones({ initial }: { initial: InversionesData }) {
           <p className="hint">AFORE, PPR y cuentas en el extranjero se actualizan a mano con el estado de cuenta (en su moneda). IBKR: {initial.flexHoy ? "el botón trae el NAV al día desde IBKR (query Month to Date) y guarda el mes en curso como parcial." : initial.flex ? "se actualiza al traer el mes; para el NAV de hoy agrega IBKR_FLEX_QUERY_MTD (query Month to Date)." : "se actualiza al subir el CSV."}</p>
         </div>
         <div className="card">
-          <div className="ct">Net worth personal · hoy</div>
+          <div className="ct"><span>Net worth personal{fechaNw ? ` · al ${fechaNw}` : ""}</span>
+            {(initial.flexHoy || initial.banxico) && <button className="btn sm" type="button" onClick={actualizarHoy} disabled={busy} title={initial.flexHoy ? "Trae el NAV de hoy de IBKR y el FIX más reciente" : "Trae el FIX más reciente; para el NAV de hoy agrega IBKR_FLEX_QUERY_MTD en Vercel"}>⟳ Actualizar al último día hábil</button>}</div>
           {nw ? (
             <div className="tbl"><table><tbody>
               <tr><td>Retiro + inversión (tuya)</td><td className="n">{fmt(nw.retiro_inversion_mxn)}</td></tr>
@@ -377,7 +400,7 @@ export function Inversiones({ initial }: { initial: InversionesData }) {
               <tr className="tot"><td>Neto</td><td className={"n " + (nw.neto_mxn < 0 ? "neg" : "pos")}>{fmt(nw.neto_mxn)}</td></tr>
             </tbody></table></div>
           ) : <p className="hint">Sin datos.</p>}
-          <p className="hint">Excluye CBZBurguer y el Fondo Akela (son de tus papás). USD al TC más reciente capturado. Proyección a futuro en Analíticas.</p>
+          <p className="hint">Excluye CBZBurguer y el Fondo Akela (son de tus papás). USD al FIX más reciente. {initial.flexHoy ? "El botón trae el NAV de IBKR al último día hábil (mes en curso como parcial) y el FIX del día." : "Para que el botón traiga también el NAV de hoy de IBKR, agrega IBKR_FLEX_QUERY_MTD (y _MTD_2) en Vercel."} AFORE, PPR y cuentas en el extranjero: con «Guardar saldo» a la izquierda.</p>
         </div>
       </div>
 
