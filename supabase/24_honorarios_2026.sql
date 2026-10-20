@@ -7,8 +7,11 @@ upd as (
   from movimientos m join datos x on x.mes = extract(month from m.fecha)
   where d.movimiento_id = m.id and d.tipo = 'comision' and extract(year from m.fecha) = 2026 and m.estado = 'real' and d.user_id = crm_owner()
   returning m.id, x.bruto),
-upd2 as (update movimientos m set monto = round(u.bruto*(1+0.16-0.10-0.16*2/3),2) from upd u where m.id = u.id returning m.id)
-select count(*) as actualizados from upd2;
+upd2 as (update movimientos m set monto = round(u.bruto*(1+0.16-0.10-0.16*2/3),2) from upd u where m.id = u.id returning m.id, m.monto),
+-- el reparto (asignaciones) debe seguir sumando el monto
+upd3 as (update asignaciones a set monto = u.monto from upd2 u where a.movimiento_id = u.id
+         and (select count(*) from asignaciones b where b.movimiento_id = u.id) = 1 returning a.id)
+select (select count(*) from upd2) as actualizados, (select count(*) from upd3) as repartos;
 
 -- 2) los meses que faltan
 do $$
