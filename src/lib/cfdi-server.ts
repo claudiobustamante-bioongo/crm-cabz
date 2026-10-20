@@ -15,7 +15,7 @@ function clean(n: unknown): unknown {
 }
 
 export function parseCfdiServer(xml: string, rfcPropio: string | null): CfdiParsed {
-  const p = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@", removeNSPrefix: false, isArray: (name) => /Concepto$|Traslado$|Retencion$|Deduccion$/.test(name) });
+  const p = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@", removeNSPrefix: false, isArray: (name, _jpath, _leaf, isAttr) => !isAttr && /Concepto$|Traslado$|Retencion$|Deduccion$/.test(name) });   // solo nodos, no atributos (@TipoDeduccion)
   const doc = clean(p.parse(xml)) as N;
   const comp = doc.Comprobante as N | undefined;
   if (!comp) throw new Error("No es un CFDI (sin nodo Comprobante)");

@@ -45,6 +45,12 @@ export function Contabilidad({ initial }: { initial: ContabilidadData }) {
       const b = await r.blob(); const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = nombre; a.click();
     } catch (e) { aviso("No se pudo descargar: " + (e as Error).message); } finally { setBusy(false); }
   };
+  const recalcularNomina = async () => {
+    setBusy(true);
+    try { const r = await fetch("/api/cfdi/reparsear", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tipo: "nomina" }) }); const j = await r.json(); if (!r.ok) throw new Error(j.error);
+      aviso(`${j.ok} recibos de nómina releídos${j.errores?.length ? ` · ${j.errores.length} con error` : ""}. Recargando…`); setTimeout(() => window.location.reload(), 1500);
+    } catch (e) { aviso("No se pudo: " + (e as Error).message); } finally { setBusy(false); }
+  };
   const generarCalendario = async () => {
     const { error } = await supabase.rpc("generar_obligaciones", { p_anio: anio });
     if (error) return aviso("No se generó: " + error.message + (/function/i.test(error.message) ? " (corre 21_contabilidad.sql)" : ""));
@@ -103,7 +109,7 @@ export function Contabilidad({ initial }: { initial: ContabilidadData }) {
             <tr className="tot"><td>Año</td><td className="n">{fmt(sumM("emitidas_subtotal"))}</td><td className="n">{fmt(sumM("emitidas_iva"))}</td><td className="n">{fmt(sumM("emitidas_ret_isr"))}</td><td className="n">{fmt(sumM("emitidas_ret_iva"))}</td><td className="n">{fmt(sumM("recibidas_total"))}</td><td className="n">{fmt(sumM("recibidas_iva_acreditable"))}</td><td className="n">{fmt(sumM("emitidas_iva") - sumM("emitidas_ret_iva") - sumM("recibidas_iva_acreditable"))}</td><td className="n">{fmt(sumM("nomina_bruto"))}</td><td className="n">{fmt(sumM("nomina_isr"))}</td></tr>
           </tbody>
         </table></div>
-        <p className="hint">* = tomado de lo capturado en Ingresos porque ese mes no hay CFDI en el CRM (en nómina solo se conoce el neto; sube los XML de nómina para bruto e ISR). «Gastos facturados» abre las facturas del mes con sus XML, PDF y Drive. IVA acreditable = IVA de recibidas a tu RFC con uso distinto de D0x/S01; el contador decide qué es estrictamente indispensable.</p>
+        <p className="hint"><button className="link" type="button" onClick={recalcularNomina} disabled={busy}>Releer XML de nómina</button> (corrige ISR y bruto de recibos ya cargados). * = tomado de lo capturado en Ingresos porque ese mes no hay CFDI en el CRM (en nómina solo se conoce el neto; sube los XML de nómina para bruto e ISR). «Gastos facturados» abre las facturas del mes con sus XML, PDF y Drive. IVA acreditable = IVA de recibidas a tu RFC con uso distinto de D0x/S01; el contador decide qué es estrictamente indispensable.</p>
       </div>
 
       <h2>2 · Inversiones · {anio}</h2>
