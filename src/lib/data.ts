@@ -157,7 +157,7 @@ export async function loadFacturacion(supabase: SupabaseClient, anio: number): P
 export async function loadContabilidad(supabase: SupabaseClient, anio: number): Promise<ContabilidadData> {
   const desde = `${anio}-01-01`, hasta = `${anio}-12-31`;
   const num = (r: Record<string, unknown>) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, typeof v === "string" && /^-?\d+(\.\d+)?$/.test(v) && !["serie", "folio", "uuid"].includes(k) ? Number(v) : v]));
-  const [cfg, mensual, cfdis, cuentas, ibkr, tc, ded, ext, aj, ob, anios] = await Promise.all([
+  const [cfg, mensual, cfdis, cuentas, ibkr, tc, ded, ext, aj, ob, anios, rubros] = await Promise.all([
     supabase.from("app_config").select("rfc_propio").maybeSingle(),
     supabase.from("v_contab_mensual").select("*").order("anio").order("mes"),
     supabase.from("v_cfdi").select("*").gte("fecha", desde).lte("fecha", hasta).order("fecha").range(0, 4999),
@@ -169,6 +169,7 @@ export async function loadContabilidad(supabase: SupabaseClient, anio: number): 
     supabase.from("ajustes_fiscales").select("*").order("anio"),
     supabase.from("obligaciones_fiscales").select("*").eq("anio", anio).order("vence"),
     supabase.from("anios").select("anio").order("anio"),
+    supabase.from("rubros").select("id,codigo,nombre,padre_id,clasificacion,emoji,activo,deduccion").eq("naturaleza", "gasto"),
   ]);
   type CRow = { id: string; nombre: string; pagadores: { codigo: string } | { codigo: string }[] | null };
   const listaAnios = new Set<number>(must<{ anio: number }[]>(anios, "anios").map((a) => a.anio));
@@ -186,6 +187,7 @@ export async function loadContabilidad(supabase: SupabaseClient, anio: number): 
     extranjeras: must<FacturaExt[]>(ext, "extranjeras"),
     ajustes: must<Record<string, unknown>[]>(aj, "ajustes").map(num) as unknown as AjusteFiscal[],
     obligaciones: must<Record<string, unknown>[]>(ob, "obligaciones").map(num) as unknown as Obligacion[],
+    rubros: must<Rubro[]>(rubros, "rubros"),
     uma: UMA_DIARIA,
   };
 }

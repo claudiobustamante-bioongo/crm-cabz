@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import ExcelJS from "exceljs";
 import { createClient } from "@/lib/supabase/server";
 import { loadContabilidad } from "@/lib/data";
-import { resumenInversiones, perdidasPorAmortizar, tcFn, MESES_LARGO, PERDIDA_ANIOS, yOf, mOf } from "@/lib/contab";
+import { resumenInversiones, perdidasPorAmortizar, tcFn, MESES_LARGO, PERDIDA_ANIOS, yOf, mOf, facturasDeducibles, DED_LABEL } from "@/lib/contab";
 
 export const maxDuration = 60;
 
@@ -163,6 +163,18 @@ export async function GET(req: Request) {
   wd.getRow(17).font = { bold: true }; wd.getRow(17).fill = { type: "pattern", pattern: "solid", fgColor: { argb: TOT } };
   wd.getCell("B13").fill = { type: "pattern", pattern: "solid", fgColor: { argb: INPUT } };
   wd.getCell("C13").value = "← editable: ajústalo con la constancia anual"; wd.getCell("C13").font = { italic: true, color: { argb: "FF6B6B5E" } };
+
+  // detalle factura por factura (lo que sustenta cada deducción)
+  const wdd = wb.addWorksheet("Deducciones detalle");
+  title(wdd, `Deducciones personales · detalle por factura · ${anio}`, "Recibidas a tu RFC con rubro deducible. Las anuladas por nota de crédito se marcan y no suman. Requisitos: pago no en efectivo, CFDI vigente.");
+  head(wdd, 3, ["Categoría (art. 151)", "Fecha", "Emisor", "RFC emisor", "Concepto del CFDI", "Uso CFDI", "Forma de pago", "Rubro en Gastos", "Gasto ligado", "Total MXN", "Anulada", "UUID", "Link Drive", "Archivo XML"], [34, 11, 32, 15, 50, 8, 18, 24, 34, 14, 8, 38, 50, 36]);
+  const fp: Record<string, string> = { "01": "Efectivo", "02": "Cheque", "03": "Transferencia", "04": "Tarjeta de crédito", "28": "Tarjeta de débito", "99": "Por definir" };
+  const dedF = facturasDeducibles(d.cfdis, d.rubros, d.rfcPropio);
+  dedF.forEach(({ cat, c, anulada }, i) => { const r = wdd.getRow(4 + i); r.values = [DED_LABEL[cat] ?? cat, c.fecha, c.emisor_nombre, c.emisor_rfc, c.concepto, c.uso_cfdi, c.forma_pago ? `${c.forma_pago} ${fp[c.forma_pago] ?? ""}` : "", c.rubro ? `${c.grupo} › ${c.rubro}` : "", c.movimiento ? `${c.movimiento_fecha} · ${c.movimiento} · ${c.cuenta}` : "", anulada ? 0 : c.total_mxn, anulada ? "Sí" : "", c.uuid.toUpperCase(), c.link_drive, c.xml_nombre]; r.getCell(10).numFmt = MXN; band(wdd, 4 + i); if (anulada) r.font = { strike: true, color: { argb: "FF888888" } }; });
+  if (dedF.length) { const r = wdd.getRow(5 + dedF.length); r.getCell(1).value = "Total"; r.getCell(10).value = { formula: `SUM(J4:J${3 + dedF.length})` }; r.getCell(10).numFmt = MXN; r.font = { bold: true }; r.fill = { type: "pattern", pattern: "solid", fgColor: { argb: TOT } }; }
+  wdd.autoFilter = { from: "A3", to: `N${3 + Math.max(1, dedF.length)}` };
+  // las categorías de la hoja Deducciones toman su total del detalle (SUMIF), no de un número pegado
+  cats.forEach(([k], i) => { wd.getCell(`B${4 + i}`).value = { formula: `SUMIF('Deducciones detalle'!A:A,"${(DED_LABEL[k] ?? k).replace(/"/g, '""')}",'Deducciones detalle'!J:J)` }; });
 
   /* ---------- 9. Extranjeras ---------- */
   const we = wb.addWorksheet("Extranjeras");

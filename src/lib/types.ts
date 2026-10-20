@@ -210,5 +210,6 @@ export interface ContabilidadData {
   extranjeras: FacturaExt[];     // del año
   ajustes: AjusteFiscal[];
   obligaciones: Obligacion[];    // del año
+  rubros: Rubro[];
   uma: number;
 }

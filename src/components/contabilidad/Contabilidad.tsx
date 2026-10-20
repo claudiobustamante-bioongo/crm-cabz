@@ -1,11 +1,12 @@
 "use client";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import type { AjusteFiscal, ContabilidadData, Obligacion } from "@/lib/types";
 import { fmt, MESN } from "@/lib/format";
-import { resumenInversiones, perdidasPorAmortizar, mesContab, PERDIDA_ANIOS } from "@/lib/contab";
+import { resumenInversiones, perdidasPorAmortizar, mesContab, PERDIDA_ANIOS, facturasDeducibles, DED_LABEL } from "@/lib/contab";
+import { FORMA_PAGO } from "@/lib/cfdi";
 
 const usd = (n: number) => (n < 0 ? "-" : "") + "US$" + Math.abs(n).toLocaleString("en-US", { maximumFractionDigits: 0 });
 const EST: Record<Obligacion["estado"], [string, string]> = { pendiente: ["Pendiente", "var(--gus)"], presentada: ["Presentada", "var(--nec)"], pagada: ["Pagada", "var(--aho)"], no_aplica: ["No aplica", "var(--gray-soft)"] };
@@ -36,6 +37,8 @@ export function Contabilidad({ initial }: { initial: ContabilidadData }) {
   const ingresoAnual = sumM("nomina_bruto") + sumM("emitidas_subtotal");
   const topeGen = Math.min(ingresoAnual * 0.15, tope5), topePpr = Math.min(ingresoAnual * 0.1, tope5);
   const ppr = Math.max(Number(ded("ppr")?.registrado ?? 0), Number(ded("ppr")?.con_comprobante ?? 0));
+  const dedFilas = facturasDeducibles(initial.cfdis, initial.rubros, initial.rfcPropio);
+  const abrir = async (path: string | null) => { if (!path) return; const { data } = await supabase.storage.from("documentos").createSignedUrl(path, 300); if (data) window.open(data.signedUrl, "_blank"); };
 
   /* ---------- acciones ---------- */
   const descargar = async (url: string, nombre: string) => {
@@ -155,7 +158,28 @@ export function Contabilidad({ initial }: { initial: ContabilidadData }) {
         <div className="stat"><div className="v pos">{fmt(Math.min(dedGen, topeGen) + Math.min(ppr, topePpr))}</div><div className="l">Total deducible</div></div>
         <div className="stat"><div className="v">{fmt(ingresoAnual)}</div><div className="l">Base (sueldo bruto + honorarios)</div></div>
       </div>
-      <p className="hint">Detalle con XML/PDF de cada factura en <Link href={`/facturacion?anio=${anio}`}>Facturación</Link>; en el Excel, pestaña «Deducciones». Las constancias de PPR/AFORE se acreditan con el documento anual de la operadora.</p>
+      <div className="card">
+        <div className="ct"><span>Detalle de lo que se deduce</span><span className="tag">una fila por factura · XML · PDF · Drive · gasto ligado</span></div>
+        <div className="tbl" style={{ fontSize: 12 }}><table>
+          <thead><tr><th>Categoría (art. 151)</th><th>Fecha</th><th>Emisor</th><th>RFC</th><th>Concepto del CFDI</th><th>Uso</th><th>Forma de pago</th><th>Rubro en Gastos</th><th>Gasto ligado</th><th className="n">Total MXN</th><th>UUID</th><th>Archivos</th></tr></thead>
+          <tbody>
+            {Object.entries(dedFilas.reduce<Record<string, typeof dedFilas>>((a, f) => { (a[f.cat] ??= []).push(f); return a; }, {})).map(([cat, fs]) => (
+              <Fragment key={cat}>
+                <tr className="sec"><td colSpan={12}>{DED_LABEL[cat] ?? cat} · {fs.filter((f) => !f.anulada).length} facturas · {fmt(fs.filter((f) => !f.anulada).reduce((a, f) => a + f.c.total_mxn, 0))}</td></tr>
+                {fs.map(({ c, anulada }) => (
+                  <tr key={c.uuid} style={anulada ? { opacity: 0.45, textDecoration: "line-through" } : undefined}>
+                    <td></td><td>{c.fecha}</td><td style={{ whiteSpace: "normal", maxWidth: 180 }}>{c.emisor_nombre}</td><td>{c.emisor_rfc}</td><td style={{ whiteSpace: "normal", maxWidth: 260 }}>{c.concepto}</td><td>{c.uso_cfdi}</td>
+                    <td>{c.forma_pago ? FORMA_PAGO[c.forma_pago] ?? c.forma_pago : ""}</td><td>{c.grupo} › {c.rubro}</td>
+                    <td style={{ whiteSpace: "normal", maxWidth: 160 }}>{c.movimiento ? `${c.movimiento_fecha} · ${c.movimiento} · ${c.cuenta}` : <span className="hint">sin gasto ligado</span>}</td>
+                    <td className="n">{fmt(c.total_mxn)}{anulada ? " (anulada)" : ""}</td><td style={{ fontFamily: "monospace", fontSize: 11 }}>{c.uuid.toUpperCase()}</td>
+                    <td style={{ whiteSpace: "nowrap" }}><button className="link" type="button" onClick={() => abrir(c.xml_path)}>XML</button>{c.pdf_path && <> · <button className="link" type="button" onClick={() => abrir(c.pdf_path)}>PDF</button></>}{c.link_drive && <> · <a href={c.link_drive} target="_blank" rel="noreferrer">Drive ↗</a></>}</td>
+                  </tr>))}
+              </Fragment>))}
+            {!dedFilas.length && <tr><td colSpan={12} className="hint">Sin facturas deducibles en {anio}.</td></tr>}
+          </tbody>
+        </table></div>
+        <p className="hint">Requisitos que revisa el contador: factura a tu RFC, pagada con medio distinto a efectivo (forma de pago 01 no deduce salvo hospital/medicinas), vigente en el SAT. Las tachadas están anuladas por nota de crédito. PPR/AFORE se acreditan con la constancia anual de la operadora, no con CFDI.</p>
+      </div>
 
       <h2>4 · Calendario fiscal · {anio}</h2>
       <div className="card">

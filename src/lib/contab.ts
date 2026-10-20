@@ -1,5 +1,5 @@
 /* Cálculos de la pestaña Contabilidad, compartidos por la pantalla y el Excel. */
-import type { AjusteFiscal, ContabMes, IbkrMes, TipoCambio } from "./types";
+import type { AjusteFiscal, Cfdi, ContabMes, IbkrMes, Rubro, TipoCambio } from "./types";
 
 export const PERDIDA_ANIOS = 10;   // art. 129 LISR: pérdidas por enajenación de acciones en bolsa, amortizables 10 ejercicios
 export const MESES_LARGO = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
@@ -76,3 +76,15 @@ export function perdidasPorAmortizar(inv: InvAnual[], ajustes: AjusteFiscal[], t
 }
 
 export const mesContab = (m: ContabMes[], anio: number, mes: number) => m.find((x) => x.anio === anio && x.mes === mes);
+
+export const DED_LABEL: Record<string, string> = { gmm: "Primas de seguros de gastos médicos (art. 151 fr. VI)", medico: "Honorarios médicos, dentales, psicología, nutrición y hospitalarios (fr. I)", funeral: "Gastos funerarios (fr. II)", colegiatura: "Colegiaturas (decreto)", hipoteca: "Intereses reales de crédito hipotecario (fr. IV)", donativo: "Donativos (fr. III)", ppr: "Aportaciones a PPR / AFORE voluntaria (fr. V)" };
+
+export interface DeducibleFila { cat: string; c: Cfdi; anulada: boolean }
+/** Facturas deducibles del año (recibidas a tu RFC con rubro deducible), con su categoría; las anuladas por nota de crédito se marcan. */
+export function facturasDeducibles(cfdis: Cfdi[], rubros: Rubro[], rfcPropio: string | null): DeducibleFila[] {
+  const catDe = (c: Cfdi) => { const r = rubros.find((x) => x.id === c.rubro_id); return r?.deduccion ?? rubros.find((x) => x.id === r?.padre_id)?.deduccion ?? null; };
+  const todas = cfdis.filter((c) => c.tipo === "recibida" && ["I", "E"].includes(c.tipo_comprobante ?? "I") && catDe(c) && (!rfcPropio || c.receptor_rfc === rfcPropio.toUpperCase())).sort((a, b) => a.fecha.localeCompare(b.fecha));
+  const fuera = new Set<string>();
+  todas.filter((c) => c.tipo_comprobante === "E").forEach((e) => { const i = todas.find((c) => !fuera.has(c.uuid) && c.tipo_comprobante !== "E" && c.emisor_rfc === e.emisor_rfc && Math.abs(c.total_mxn - e.total_mxn) < 1 && c.fecha <= e.fecha); if (i) { fuera.add(i.uuid); fuera.add(e.uuid); } });
+  return todas.filter((c) => c.tipo_comprobante !== "E").map((c) => ({ cat: catDe(c)!, c, anulada: fuera.has(c.uuid) }));
+}
