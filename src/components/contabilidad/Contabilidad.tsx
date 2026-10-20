@@ -8,6 +8,7 @@ import { fmt, MESN } from "@/lib/format";
 import { resumenInversiones, perdidasPorAmortizar, mesContab, PERDIDA_ANIOS, facturasDeducibles, DED_LABEL } from "@/lib/contab";
 import { FORMA_PAGO } from "@/lib/cfdi";
 import { TablaFija } from "@/components/TablaFija";
+import { TablaAnual } from "@/components/inversiones/TablaAnual";
 
 const usd = (n: number) => (n < 0 ? "-" : "") + "US$" + Math.abs(n).toLocaleString("en-US", { maximumFractionDigits: 0 });
 const EST: Record<Obligacion["estado"], [string, string]> = { pendiente: ["Pendiente", "var(--gus)"], presentada: ["Presentada", "var(--nec)"], pagada: ["Pagada", "var(--aho)"], no_aplica: ["No aplica", "var(--gray-soft)"] };
@@ -117,6 +118,7 @@ export function Contabilidad({ initial }: { initial: ContabilidadData }) {
       </div>
 
       <h2>2 · Inversiones · {anio}</h2>
+      <TablaAnual filas={initial.ibkr} cuentas={initial.cuentasIbkr} tc={initial.tc} anio={anio} alto="60vh" titulo={`Resumen mensual IBKR · ${anio} · MXN al FIX (todas las cuentas)`} />
       <div className="card">
         <div className="ct"><span>Por cuenta (USD y MXN al FIX de cada mes)</span><span className="tag">art. 142 fr. V dividendos · art. 143 intereses · Cap. IV enajenación</span></div>
         <div className="tbl"><table>

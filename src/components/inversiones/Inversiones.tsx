@@ -125,7 +125,7 @@ export function Inversiones({ initial }: { initial: InversionesData }) {
   const line = (l: Line) => desglose && accs.length > 1
     ? <Fragment key={l.key}>{fila(l, accs)}{accs.filter((c) => rowsOf(c.id, year).length).map((c) => fila(l, [c], true))}</Fragment>
     : fila(l, accs);
-  const sec = (t: string) => <tr key={"s" + t} className="sec"><td colSpan={14}>{t}</td></tr>;
+  const sec = (t: string) => <tr key={"s" + t} className="sec"><td>{t}</td>{Array.from({ length: 13 }, (_, i) => <td key={i} />)}</tr>;
   const drillTo = (k: string, m: number) => {
     const parts = accs.map((c) => { const r = rowsOf(c.id, year).find((d) => mOf(d) === m); if (!r) return ""; const map: Record<string, string> = {
       div: `dividendos ${r.div_bruto} − retención ${r.div_ret}`, cup: `cupones ${r.cupon}`, re: `ETFs ${r.real_etf}`, ra: `acciones ${r.real_acc}`, ro: `opciones ${r.real_opc}`, rf: `forex ${r.real_fx}`, rb: `bonos ${r.real_bono}`,
@@ -306,7 +306,7 @@ export function Inversiones({ initial }: { initial: InversionesData }) {
             {accs.length > 1 && <label style={{ display: "flex", gap: 5, alignItems: "center", margin: 0, fontSize: 12, cursor: "pointer" }}><input type="checkbox" checked={desglose} onChange={(e) => setDesglose(e.target.checked)} /> desglose por cuenta</label>}
             <span className="tag">toca una celda para ver de dónde sale</span>
           </span></div>
-        <TablaFija><table>
+        <TablaFija alto="72vh"><table>
           <thead><tr><th>Concepto</th>{MESN.map((m) => <th key={m} className="n">{m}</th>)}<th className="n">Año</th></tr></thead>
           <tbody>
             {sec("1 · Ingresos pasivos (dividendos netos + cupones)")}
