@@ -346,9 +346,12 @@ from (values
 ) as v(anio, linea, pag, tr, mes, monto, rubro);
 
 -- 2027: el seguro GMM sigue en enero y febrero (cuotas 5 y 6)
-select plan_akela_set(2027, 'Seguro GMM papás', 1, 22955, 'CABZ', false, (select r.id from rubros r join rubros p on p.id = r.padre_id where r.user_id = crm_owner() and p.nombre = 'Akela' and r.nombre = 'Seguro GMM papás' limit 1));
-select plan_akela_set(2027, 'Seguro GMM papás', 2, 22955, 'CABZ', false, null);
-update plan_akela set monto = 0 where user_id = crm_owner() and anio = 2027 and linea = 'Seguro GMM papás' and mes between 3 and 12;
+delete from plan_akela where user_id = crm_owner() and anio = 2027 and linea = 'Seguro GMM papás';
+insert into plan_akela (anio, linea, rubro_id, pagador_id, es_transferencia, mes, monto)
+select 2027, 'Seguro GMM papás',
+       (select r.id from rubros r join rubros p on p.id = r.padre_id where r.user_id = crm_owner() and p.nombre = 'Akela' and r.nombre = 'Seguro GMM papás' limit 1),
+       (select id from pagadores where user_id = crm_owner() and codigo = 'CABZ'), false, m, case when m <= 2 then 22955 else 0 end
+from generate_series(1, 12) m;
 
 -- proponer el año siguiente: promedio del año completo o de los últimos N meses con datos
 create or replace function proponer_plan_akela(p_de int, p_a int, p_meses int default null) returns int
