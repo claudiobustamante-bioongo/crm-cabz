@@ -19,15 +19,15 @@ export function TablaFija({ children, fijarUltima = true, fontSize, alto, grupo,
     const medir = () => setW(el.scrollWidth);
     medir();
     const ro = new ResizeObserver(medir); ro.observe(el); if (el.firstElementChild) ro.observe(el.firstElementChild);
-    window.addEventListener("resize", medir); const t = setTimeout(medir, 300);
+    window.addEventListener("resize", medir); const t = setTimeout(medir, 300); const t2 = setTimeout(medir, 1500);
     const off = registrar(grupo, el);
-    return () => { ro.disconnect(); off(); window.removeEventListener("resize", medir); clearTimeout(t); };
+    return () => { ro.disconnect(); off(); window.removeEventListener("resize", medir); clearTimeout(t); clearTimeout(t2); };
   }, [children, grupo]);
   const sync = (from: HTMLDivElement | null, to: HTMLDivElement | null) => { if (from && to && Math.abs(from.scrollLeft - to.scrollLeft) > 1) to.scrollLeft = from.scrollLeft; };
   return (
     <div className={"tbl-fija" + (fijarUltima ? " ultima" : "")} style={fontSize ? { fontSize } : undefined}>
       {!sinBarraArriba && <div ref={top} className="tbl-scroll-top" onScroll={() => { sync(top.current, body.current); if (body.current) propagar(grupo, body.current); }} aria-hidden><div style={{ width: w, height: 1 }} /></div>}
-      <div ref={body} className="tbl" style={alto ? { maxHeight: alto, overflowY: "auto" } : undefined} onScroll={() => { sync(body.current, top.current); if (body.current) propagar(grupo, body.current); }}>{children}</div>
+      <div ref={body} className="tbl" style={alto ? { maxHeight: alto, overflowY: "auto" } : undefined} onScroll={() => { sync(body.current, top.current); if (body.current) { propagar(grupo, body.current); if (body.current.scrollWidth !== w) setW(body.current.scrollWidth); } }}>{children}</div>
     </div>
   );
 }

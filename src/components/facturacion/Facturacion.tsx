@@ -23,6 +23,10 @@ export function Facturacion({ initial, vista = "resumen", filtro, soloLectura = 
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState("");
   const [ftipo, setFtipo] = useState(filtro?.tipo ?? ""); const [fmes, setFmes] = useState(filtro?.mes ?? ""); const [festado, setFestado] = useState(""); const [q, setQ] = useState(filtro?.q ?? "");
+  const [frubros, setFrubros] = useState<Set<string>>(new Set());   // ids de rubro o de grupo (varios a la vez)
+  const [fmin, setFmin] = useState(""); const [fmax, setFmax] = useState("");
+  const [orden, setOrden] = useState<{ col: string; dir: 1 | -1 }>({ col: "Fecha emisión", dir: -1 });
+  const [rubrosAbierto, setRubrosAbierto] = useState(false);
   const [creando, setCreando] = useState<Cfdi | null>(null);
   const [cMsi, setCMsi] = useState(0);   // 0 = un solo cargo; N = meses sin intereses
   const [cLibro, setCLibro] = useState("");   // "" = según el rubro
@@ -160,8 +164,24 @@ export function Facturacion({ initial, vista = "resumen", filtro, soloLectura = 
 
   /* ---------- derivados ---------- */
   const meses = useMemo(() => [...new Set(cfdis.map((c) => mesKey(c.fecha)))].sort(), [cfdis]);
-  const lista = cfdis.filter((c) => (!ftipo || c.tipo === ftipo) && (!fmes || mesKey(c.fecha) === fmes) && (!festado || c.estado === festado)
-    && (!q || `${c.emisor_nombre} ${c.receptor_nombre} ${c.concepto} ${c.folio} ${c.uuid}`.toLowerCase().includes(q.toLowerCase())));
+  const COLS: [string, (c: Cfdi) => string | number | null][] = [
+    ["Fecha emisión", (c) => c.fecha], ["Tipo", (c) => TIPO_LABEL[c.tipo]], ["Total", (c) => c.total], ["Moneda", (c) => c.moneda], ["Total en MXN", (c) => c.total_mxn],
+    ["Emisor", (c) => c.emisor_nombre], ["Receptor", (c) => c.receptor_nombre],
+    ["Categoría contable", (c) => c.rubro ? `${c.grupo} › ${c.rubro}` : c.tipo === "nomina" ? "Sueldo" : c.tipo === "emitida" ? "Comisión" : null], ["Uso CFDI", (c) => c.uso_cfdi],
+    ["Subtotal", (c) => c.subtotal], ["IVA", (c) => c.iva], ["Ret. ISR", (c) => c.ret_isr], ["Ret. IVA", (c) => c.ret_iva], ["Tipo de cambio", (c) => c.tc],
+    ["Forma de pago", (c) => c.forma_pago ? `${c.forma_pago} ${FORMA_PAGO[c.forma_pago] ?? ""}`.trim() : null], ["Método de pago", (c) => c.metodo_pago], ["Vencimiento", (c) => c.vencimiento],
+    ["Link Drive", (c) => c.link_drive], ["Confianza", (c) => c.confianza ?? (c.xml_path ? "alta (XML)" : null)], ["Notas", (c) => c.notas], ["Archivo origen", (c) => c.xml_nombre],
+    ["RFC emisor", (c) => c.emisor_rfc], ["RFC receptor", (c) => c.receptor_rfc], ["Serie", (c) => c.serie], ["Folio", (c) => c.folio], ["Folio Fiscal (UUID)", (c) => c.uuid.toUpperCase()], ["Concepto", (c) => c.concepto], ["ID", (c) => c.num],
+  ];
+  const grupoDe = (c: Cfdi) => initial.rubros.find((r) => r.id === c.rubro_id)?.padre_id ?? null;
+  const pasaRubro = (c: Cfdi) => !frubros.size || (c.rubro_id ? frubros.has(c.rubro_id) || frubros.has(grupoDe(c) ?? "") : frubros.has("__sin__"));
+  const listaSinOrden = cfdis.filter((c) => (!ftipo || c.tipo === ftipo) && (!fmes || mesKey(c.fecha) === fmes) && (!festado || c.estado === festado) && pasaRubro(c)
+    && (!fmin || c.total_mxn >= Number(fmin)) && (!fmax || c.total_mxn <= Number(fmax))
+    && (!q || `${c.emisor_nombre} ${c.receptor_nombre} ${c.concepto} ${c.folio} ${c.uuid} ${c.emisor_rfc} ${c.rubro ?? ""}`.toLowerCase().includes(q.toLowerCase())));
+  const valorCol = (c: Cfdi, col: string): string | number => { const f = COLS.find((x) => x[0] === col)?.[1]; const v = f ? f(c) : null; return v == null ? "" : v; };
+  const lista = [...listaSinOrden].sort((a, b) => { const va = valorCol(a, orden.col), vb = valorCol(b, orden.col); const r = typeof va === "number" && typeof vb === "number" ? va - vb : String(va).localeCompare(String(vb), "es"); return r * orden.dir; });
+  const ordenar = (col: string) => setOrden((o) => (o.col === col ? { col, dir: (o.dir * -1) as 1 | -1 } : { col, dir: ["Fecha emisión", "Total", "Total en MXN", "Subtotal", "IVA"].includes(col) ? -1 : 1 }));
+  const flecha = (col: string) => (orden.col === col ? (orden.dir === 1 ? " ▲" : " ▼") : "");
   const tot = (t: Cfdi["tipo"]) => cfdis.filter((c) => c.tipo === t).reduce((a, c) => a + c.total, 0);
   const esSinRubro = (c: Cfdi) => c.tipo === "recibida" && !c.rubro_id;
   const sinRubro = cfdis.filter(esSinRubro).length;
@@ -199,15 +219,6 @@ export function Facturacion({ initial, vista = "resumen", filtro, soloLectura = 
   const cel = (mes: string, tipo: string, k: "facturas" | "total_mxn" | "iva" | "ret_isr" | "ret_iva" | "por_ligar") => initial.mensual.filter((m) => m.mes.startsWith(mes) && (tipo === "*" || m.tipo === tipo)).reduce((a, m) => a + Number(m[k]), 0);
 
   /* ---------- exportar detalle (mismas columnas que Panel_Facturas_Maestro) ---------- */
-  const COLS: [string, (c: Cfdi) => string | number | null][] = [
-    ["Fecha emisión", (c) => c.fecha], ["Tipo", (c) => TIPO_LABEL[c.tipo]], ["Total", (c) => c.total], ["Moneda", (c) => c.moneda], ["Total en MXN", (c) => c.total_mxn],
-    ["Emisor", (c) => c.emisor_nombre], ["Receptor", (c) => c.receptor_nombre],
-    ["Categoría contable", (c) => c.rubro ? `${c.grupo} › ${c.rubro}` : c.tipo === "nomina" ? "Sueldo" : c.tipo === "emitida" ? "Comisión" : null], ["Uso CFDI", (c) => c.uso_cfdi],
-    ["Subtotal", (c) => c.subtotal], ["IVA", (c) => c.iva], ["Ret. ISR", (c) => c.ret_isr], ["Ret. IVA", (c) => c.ret_iva], ["Tipo de cambio", (c) => c.tc],
-    ["Forma de pago", (c) => c.forma_pago ? `${c.forma_pago} ${FORMA_PAGO[c.forma_pago] ?? ""}`.trim() : null], ["Método de pago", (c) => c.metodo_pago], ["Vencimiento", (c) => c.vencimiento],
-    ["Link Drive", (c) => c.link_drive], ["Confianza", (c) => c.confianza ?? (c.xml_path ? "alta (XML)" : null)], ["Notas", (c) => c.notas], ["Archivo origen", (c) => c.xml_nombre],
-    ["RFC emisor", (c) => c.emisor_rfc], ["RFC receptor", (c) => c.receptor_rfc], ["Serie", (c) => c.serie], ["Folio", (c) => c.folio], ["Folio Fiscal (UUID)", (c) => c.uuid.toUpperCase()], ["Concepto", (c) => c.concepto], ["ID", (c) => c.num],
-  ];
   const exportar = () => {
     const esc = (v: string | number | null) => { const t = v == null ? "" : String(v); return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
     const csv = [COLS.map((c) => c[0]).join(","), ...lista.map((c) => COLS.map(([, f]) => esc(f(c))).join(","))].join("\n");
@@ -370,13 +381,31 @@ export function Facturacion({ initial, vista = "resumen", filtro, soloLectura = 
 
       <div className="card full-bleed">
         <div className="ct"><span>Detalle de facturas</span><span className="tag">{lista.length} de {cfdis.length} · <button className="link" type="button" onClick={exportar}>exportar CSV</button></span></div>
-        <div className="g3" style={{ marginBottom: 8 }}>
+        <div className="g4" style={{ marginBottom: 8 }}>
           <div><label htmlFor="f-tipo">Tipo</label><select id="f-tipo" value={ftipo} onChange={(e) => setFtipo(e.target.value)}><option value="">Todas</option><option value="recibida">Recibidas</option><option value="nomina">Nómina</option></select></div>
           <div><label htmlFor="f-mes">Mes</label><select id="f-mes" value={fmes} onChange={(e) => setFmes(e.target.value)}><option value="">Todos</option>{meses.map((k) => <option key={k} value={k}>{ml(k)}</option>)}</select></div>
           <div><label htmlFor="f-est">Estado</label><select id="f-est" value={festado} onChange={(e) => setFestado(e.target.value)}><option value="">Todos</option>{(Object.keys(ESTADO) as Cfdi["estado"][]).map((k) => <option key={k} value={k}>{ESTADO[k][0]}</option>)}</select></div>
+          <div style={{ position: "relative" }}><label>Rubros</label>
+            <button type="button" className="btn ghost sm" style={{ width: "100%", textAlign: "left" }} onClick={() => setRubrosAbierto((v) => !v)}>{frubros.size ? `${frubros.size} seleccionado${frubros.size === 1 ? "" : "s"}` : "Todos"} ▾</button>
+            {rubrosAbierto && (
+              <div style={{ position: "absolute", zIndex: 20, top: "100%", left: 0, background: "var(--paper)", border: "1.5px solid var(--ink)", borderRadius: 10, padding: 8, width: 320, maxHeight: 320, overflowY: "auto", boxShadow: "3px 3px 0 var(--ink)", fontSize: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><button className="link" type="button" onClick={() => setFrubros(new Set())}>limpiar</button><button className="link" type="button" onClick={() => setRubrosAbierto(false)}>cerrar</button></div>
+                <label style={{ display: "block", margin: 0 }}><input type="checkbox" checked={frubros.has("__sin__")} onChange={(e) => setFrubros((p) => { const n = new Set(p); if (e.target.checked) n.add("__sin__"); else n.delete("__sin__"); return n; })} /> Sin rubro</label>
+                {grupos.map((g) => (
+                  <div key={g.id} style={{ marginTop: 4 }}>
+                    <label style={{ display: "block", margin: 0, fontWeight: 700 }}><input type="checkbox" checked={frubros.has(g.id)} onChange={(e) => setFrubros((p) => { const n = new Set(p); if (e.target.checked) n.add(g.id); else n.delete(g.id); return n; })} /> {g.nombre}</label>
+                    {subsDe(g.id).map((r) => <label key={r.id} style={{ display: "block", margin: 0, paddingLeft: 18 }}><input type="checkbox" checked={frubros.has(r.id)} onChange={(e) => setFrubros((p) => { const n = new Set(p); if (e.target.checked) n.add(r.id); else n.delete(r.id); return n; })} /> {r.nombre}</label>)}
+                  </div>))}
+              </div>)}
+          </div>
+          <div><label htmlFor="f-min">Monto MXN desde</label><input id="f-min" type="number" value={fmin} onChange={(e) => setFmin(e.target.value)} placeholder="0" /></div>
+          <div><label htmlFor="f-max">hasta</label><input id="f-max" type="number" value={fmax} onChange={(e) => setFmax(e.target.value)} placeholder="∞" /></div>
+          <div><label htmlFor="f-q2">Buscar</label><input id="f-q2" type="text" value={q} onChange={(e) => setQ(e.target.value)} placeholder="emisor, RFC, concepto, folio, rubro…" /></div>
+          <div><label>&nbsp;</label><button className="btn ghost sm" type="button" style={{ width: "100%" }} onClick={() => { setFtipo(""); setFmes(""); setFestado(""); setFrubros(new Set()); setFmin(""); setFmax(""); setQ(""); }}>Quitar filtros</button></div>
         </div>
+        <p className="hint" style={{ marginTop: 0 }}>Clic en un encabezado para ordenar (otra vez invierte). {lista.length} facturas · {fmt(lista.reduce((a, c) => a + c.total_mxn, 0))} MXN en la selección.</p>
         <TablaFija fontSize={12} fijarUltima={false}><table>
-          <thead><tr>{COLS.slice(0, 7).map((c) => <th key={c[0]} className={["Subtotal", "IVA", "Ret. ISR", "Ret. IVA", "Total", "Total en MXN", "Tipo de cambio"].includes(c[0]) ? "n" : undefined}>{c[0]}</th>)}<th>Estado</th><th>Acciones</th>{COLS.slice(7).map((c) => <th key={c[0]} className={["Subtotal", "IVA", "Ret. ISR", "Ret. IVA", "Tipo de cambio"].includes(c[0]) ? "n" : undefined}>{c[0]}</th>)}</tr></thead>
+          <thead><tr>{COLS.slice(0, 7).map((c) => <th key={c[0]} className={["Subtotal", "IVA", "Ret. ISR", "Ret. IVA", "Total", "Total en MXN", "Tipo de cambio"].includes(c[0]) ? "n" : undefined} style={{ cursor: "pointer" }} onClick={() => ordenar(c[0])}>{c[0]}{flecha(c[0])}</th>)}<th>Estado</th><th>Acciones</th>{COLS.slice(7).map((c) => <th key={c[0]} className={["Subtotal", "IVA", "Ret. ISR", "Ret. IVA", "Tipo de cambio"].includes(c[0]) ? "n" : undefined} style={{ cursor: "pointer" }} onClick={() => ordenar(c[0])}>{c[0]}{flecha(c[0])}</th>)}</tr></thead>
           <tbody>
             {lista.map((c) => (
               <tr key={c.uuid}>
