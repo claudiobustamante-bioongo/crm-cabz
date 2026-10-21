@@ -116,15 +116,15 @@ export function Gastos({ initial }: { initial: GastosData }) {
   };
 
   /* ---------- edición en línea ---------- */
-  const [edit, setEdit] = useState<{ id: string; fecha: string; monto: string; cuenta_id: string; rubro_id: string; notas: string } | null>(null);
-  const empezarEdicion = (m: Movimiento) => setEdit({ id: m.id, fecha: m.fecha, monto: String(m.monto), cuenta_id: m.cuenta_id ?? "", rubro_id: m.rubro_id ?? "", notas: m.notas ?? "" });
+  const [edit, setEdit] = useState<{ id: string; fecha: string; monto: string; cuenta_id: string; rubro_id: string; notas: string; libro: string; pagador: string } | null>(null);
+  const empezarEdicion = (m: Movimiento) => { const a = asigDe(m.id); setEdit({ id: m.id, fecha: m.fecha, monto: String(m.monto), cuenta_id: m.cuenta_id ?? "", rubro_id: m.rubro_id ?? "", notas: m.notas ?? "", libro: a.length === 1 ? a[0].libro : "", pagador: a.length === 1 ? a[0].pagador : "" }); };
   const guardarEdicion = async () => {
     if (!edit) return;
     const monto = Number(edit.monto);
     if (!(monto > 0)) return aviso("Monto inválido.");
     setBusy(true);
     try {
-      const { error } = await supabase.rpc("editar_movimiento", { p: { id: edit.id, fecha: edit.fecha, monto, cuenta_id: edit.cuenta_id || null, rubro_id: edit.rubro_id || null, notas: edit.notas } });
+      const { error } = await supabase.rpc("editar_movimiento", { p: { id: edit.id, fecha: edit.fecha, monto, cuenta_id: edit.cuenta_id || null, rubro_id: edit.rubro_id || null, notas: edit.notas, libro: edit.libro || null, pagador: edit.pagador || null } });
       if (error) throw error;
       const [m, a] = await Promise.all([
         supabase.from("v_movimientos").select(MOV_COLS).eq("id", edit.id).single(),
@@ -268,7 +268,10 @@ export function Gastos({ initial }: { initial: GastosData }) {
                         {rubros.filter((r) => !r.padre_id).map((g) => <optgroup key={g.id} label={g.nombre}>{rubros.filter((r) => r.padre_id === g.id).map((r) => <option key={r.id} value={r.id}>{r.nombre}</option>)}</optgroup>)}</select></td>
                       <td><select value={edit.cuenta_id} onChange={(e) => setEdit({ ...edit, cuenta_id: e.target.value })} style={{ ...inp, width: 130 }}>{initial.cuentas.filter((c) => c.es_medio_pago || c.id === edit.cuenta_id).map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}</select></td>
                       <td><input type="date" value={edit.fecha} onChange={(e) => setEdit({ ...edit, fecha: e.target.value })} style={{ ...inp, width: 130 }} /></td>
-                      <td>{as.map((a) => `${a.libro}${a.pagador !== "CABZ" ? " · " + a.pagador : ""}`).join(", ")}</td>
+                      <td>{as.length <= 1 ? <span style={{ display: "flex", gap: 4 }}>
+                        <select value={edit.libro} onChange={(e) => setEdit({ ...edit, libro: e.target.value })} style={{ ...inp, width: 110 }} aria-label="Libro">{initial.libros.map((l) => <option key={l.codigo} value={l.codigo}>{l.nombre}</option>)}</select>
+                        <select value={edit.pagador} onChange={(e) => setEdit({ ...edit, pagador: e.target.value })} style={{ ...inp, width: 90 }} aria-label="Pagador">{initial.pagadores.map((p) => <option key={p.codigo} value={p.codigo}>{p.codigo}</option>)}</select></span>
+                        : <span title="Reparto entre varios: se edita borrando y volviendo a registrar">{as.map((a) => `${a.libro}${a.pagador !== "CABZ" ? " · " + a.pagador : ""}`).join(", ")}</span>}</td>
                       <td><input type="text" value={edit.notas} onChange={(e) => setEdit({ ...edit, notas: e.target.value })} style={{ ...inp, width: 160 }} /></td>
                       <td className="n"><input type="number" step="0.01" value={edit.monto} onChange={(e) => setEdit({ ...edit, monto: e.target.value })} style={{ ...inp, width: 100, textAlign: "right" }} /></td>
                       <td style={{ whiteSpace: "nowrap" }}><button className="link" type="button" onClick={guardarEdicion} disabled={busy}>Guardar</button> · <button className="link" type="button" onClick={() => setEdit(null)}>Cancelar</button></td>
