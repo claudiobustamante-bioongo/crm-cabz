@@ -45,15 +45,20 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
   /* ---------- aportaciones: quién puso el dinero ---------- */
   const gastosAkela = initial.libro.filter((x) => x.concepto === "gasto");
   const aportes = initial.libro.filter((x) => x.concepto === "aportacion");
+  const retiros = initial.libro.filter((x) => x.concepto === "retiro");
   const porMes = Array.from({ length: 12 }, (_, i) => {
     const k = `${anio}-${String(i + 1).padStart(2, "0")}`;
     const g = gastosAkela.filter((x) => x.mes.startsWith(k)), a = aportes.filter((x) => x.mes.startsWith(k));
     const yo = sum(g.filter((x) => x.quien === "CABZ").map((x) => x.salida_mxn)) + sum(a.filter((x) => (x.quien ?? "CABZ") === "CABZ").map((x) => x.entrada_mxn));
     const lm = sum(a.filter((x) => x.quien === "HAMB").map((x) => x.entrada_mxn)) + sum(g.filter((x) => x.quien === "HAMB").map((x) => x.salida_mxn));
     const papas = sum(g.filter((x) => x.quien === "CABU" || x.quien === "MPZB").map((x) => x.salida_mxn));
-    return { k, yo, lm, papas };
+    const r = retiros.filter((x) => x.mes.startsWith(k));
+    const retYo = sum(r.filter((x) => (x.quien ?? "CABZ") === "CABZ").map((x) => x.salida_mxn)), retLM = sum(r.filter((x) => x.quien === "HAMB").map((x) => x.salida_mxn));
+    return { k, yo, lm, papas, retYo, retLM, netoYo: yo - retYo, netoLM: lm - retLM };
   });
   const totYo = sum(porMes.map((m) => m.yo)), totLM = sum(porMes.map((m) => m.lm));
+  const totRetYo = sum(porMes.map((m) => m.retYo)), totRetLM = sum(porMes.map((m) => m.retLM));
+  const netoYo = totYo - totRetYo, netoLM = totLM - totRetLM;
 
   /* ---------- fondo y proyección ---------- */
   const fondoMxn = initial.fondo.reduce((a, f) => a + (f.moneda === "USD" ? f.saldo * initial.tcHoy : f.saldo), 0);
@@ -116,7 +121,7 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
         </div>
         {/* aportaciones: barra apilada yo vs Luis Miguel */}
         <div style={{ marginTop: 10 }}>
-          <div className="lbl" style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}><span><b>Quién ha puesto el dinero en {anio}</b></span><span>yo {fmt(totYo)} · Luis Miguel {fmt(totLM)} · ellos {fmt(sum(porMes.map((m) => m.papas)))}</span></div>
+          <div className="lbl" style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}><span><b>Quién ha puesto el dinero en {anio}</b></span><span>yo {fmt(totYo)}{totRetYo ? ` (neto ${fmt(netoYo)} tras retirar ${fmt(totRetYo)} del fondo)` : ""} · Luis Miguel {fmt(totLM)}{totRetLM ? ` (neto ${fmt(netoLM)})` : ""} · ellos {fmt(sum(porMes.map((m) => m.papas)))}</span></div>
           {(() => { const t = totYo + totLM + sum(porMes.map((m) => m.papas)) || 1; const py = (totYo / t) * 100, pl = (totLM / t) * 100, pp = 100 - py - pl; return (
             <div style={{ display: "flex", height: 22, border: "1.5px solid var(--ink)", borderRadius: 11, overflow: "hidden", fontSize: 11, fontWeight: 700, color: "#fff" }}>
               <div style={{ width: `${py}%`, background: "var(--c6)", display: "flex", alignItems: "center", paddingLeft: 8, whiteSpace: "nowrap", overflow: "hidden" }} title={`Yo: ${fmt(totYo)}`}>{py > 12 ? `yo ${Math.round(py)} %` : ""}</div>
@@ -200,16 +205,18 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
       <h2>2 · Aportaciones {anio} · yo vs Luis Miguel</h2>
       <div className="card">
         <div className="tbl"><table>
-          <thead><tr><th>Mes</th><th className="n">Puse yo (gastos + depósitos)</th><th className="n">Luis Miguel</th><th className="n">Pagaron ellos (de lo transferido)</th><th className="n">Acumulado yo</th><th className="n">Acumulado LM</th><th className="n">% LM</th></tr></thead>
+          <thead><tr><th>Mes</th><th className="n">Pagué yo (gastos + depósitos)</th><th className="n">Retiré del fondo</th><th className="n">Neto yo</th><th className="n">Luis Miguel</th><th className="n">Retiró LM</th><th className="n">Neto LM</th><th className="n">Pagaron ellos (de lo transferido)</th><th className="n">Acum. neto yo</th><th className="n">Acum. neto LM</th><th className="n">% LM</th></tr></thead>
           <tbody>
-            {(() => { let ay = 0, al = 0; return porMes.filter((m) => m.yo || m.lm || m.papas).map((m) => { ay += m.yo; al += m.lm; return (
-              <tr key={m.k}><td>{ml(m.k)}</td><td className="n">{fmt(m.yo)}</td><td className={"n" + (m.lm ? " pos" : "")}>{m.lm ? fmt(m.lm) : "·"}</td><td className="n">{m.papas ? fmt(m.papas) : "·"}</td><td className="n">{fmt(ay)}</td><td className="n">{fmt(al)}</td><td className="n">{pct(al, ay + al)}</td></tr>); }); })()}
-            <tr className="tot"><td>Año</td><td className="n">{fmt(totYo)}</td><td className="n">{fmt(totLM)}</td><td className="n">{fmt(sum(porMes.map((m) => m.papas)))}</td><td className="n">{fmt(totYo)}</td><td className="n">{fmt(totLM)}</td><td className="n">{pct(totLM, totYo + totLM)}</td></tr>
+            {(() => { let ay = 0, al = 0; return porMes.filter((m) => m.yo || m.lm || m.papas || m.retYo || m.retLM).map((m) => { ay += m.netoYo; al += m.netoLM; return (
+              <tr key={m.k}><td>{ml(m.k)}</td><td className="n">{fmt(m.yo)}</td><td className={"n" + (m.retYo ? " neg" : "")}>{m.retYo ? "−" + fmt(m.retYo) : "·"}</td><td className="n" style={{ fontWeight: 600 }}>{fmt(m.netoYo)}</td><td className={"n" + (m.lm ? " pos" : "")}>{m.lm ? fmt(m.lm) : "·"}</td><td className={"n" + (m.retLM ? " neg" : "")}>{m.retLM ? "−" + fmt(m.retLM) : "·"}</td><td className="n" style={{ fontWeight: 600 }}>{m.lm || m.retLM ? fmt(m.netoLM) : "·"}</td><td className="n">{m.papas ? fmt(m.papas) : "·"}</td><td className="n">{fmt(ay)}</td><td className="n">{fmt(al)}</td><td className="n">{pct(Math.max(al, 0), Math.max(ay, 0) + Math.max(al, 0))}</td></tr>); }); })()}
+            <tr className="tot"><td>Año</td><td className="n">{fmt(totYo)}</td><td className="n">{totRetYo ? "−" + fmt(totRetYo) : "·"}</td><td className="n">{fmt(netoYo)}</td><td className="n">{fmt(totLM)}</td><td className="n">{totRetLM ? "−" + fmt(totRetLM) : "·"}</td><td className="n">{fmt(netoLM)}</td><td className="n">{fmt(sum(porMes.map((m) => m.papas)))}</td><td className="n">{fmt(netoYo)}</td><td className="n">{fmt(netoLM)}</td><td className="n">{pct(Math.max(netoLM, 0), Math.max(netoYo, 0) + Math.max(netoLM, 0))}</td></tr>
           </tbody>
         </table></div>
         {aportes.length > 0 && <details style={{ marginTop: 8 }}><summary style={{ cursor: "pointer" }}>Depósitos al fondo ({aportes.length})</summary>
           <div className="tbl"><table><tbody>{aportes.map((a, i) => <tr key={i}><td>{a.fecha}</td><td>{a.quien ?? "CABZ"}</td><td style={{ whiteSpace: "normal" }}>{a.descripcion}</td><td className="n">{fmt2(a.entrada_mxn)}</td></tr>)}</tbody></table></div></details>}
-        <p className="hint">Lo que pagas de Akela con tus cuentas cuenta como aportación tuya; Luis Miguel compensa con depósitos al fondo (o pagando gastos a su nombre).</p>
+        {retiros.length > 0 && <details style={{ marginTop: 8 }}><summary style={{ cursor: "pointer" }}>Retiros del fondo ({retiros.length})</summary>
+          <div className="tbl"><table><tbody>{retiros.map((a, i) => <tr key={i}><td>{a.fecha}</td><td>{a.quien ?? "CABZ"}</td><td style={{ whiteSpace: "normal" }}>{a.descripcion}</td><td className="n">{fmt2(a.salida_mxn)}</td></tr>)}</tbody></table></div></details>}
+        <p className="hint">Pagado = gastos Akela con tus cuentas + depósitos al fondo. Lo que retiras del fondo a tu favor se resta: el neto es lo que realmente pusiste de tu bolsa. Luis Miguel compensa con depósitos al fondo o pagando gastos a su nombre.</p>
       </div>
 
       <h2>3 · Fondo Akela y proyección</h2>
