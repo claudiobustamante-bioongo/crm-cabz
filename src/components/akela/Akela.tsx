@@ -4,7 +4,6 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { AkelaData, PlanAkela } from "@/lib/types";
 import { fmt, fmt2, MESN, ml } from "@/lib/format";
-import { TablaFija, Seccion } from "@/components/TablaFija";
 
 const usd = (n: number) => "US$" + Math.round(n).toLocaleString("en-US");
 const QUIEN: Record<string, string> = { CABZ: "Pago yo directamente", CABU: "Transferencia a papá · él paga", MPZB: "Transferencia a mamá · ella paga", HAMB: "Luis Miguel" };
@@ -30,13 +29,14 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
     plan.forEach((p) => { const l = m.get(p.linea) ?? { linea: p.linea, pagador: p.pagador, transferencia: p.es_transferencia, rubro_id: p.rubro_id, meses: Array(12).fill(0) }; l.meses[p.mes - 1] = Number(p.monto); m.set(p.linea, l); });
     return [...m.values()].sort((a, b) => ORDEN.indexOf(a.pagador) - ORDEN.indexOf(b.pagador) || a.linea.localeCompare(b.linea, "es"));
   }, [plan]);
-  const realDe = (linea: string, mes: number) => initial.realPlan.filter((r) => r.linea === linea && r.mes === mes).reduce((a, r) => a + Number(r.real), 0);
-  const realLinea = (linea: string) => Array.from({ length: 12 }, (_, i) => realDe(linea, i + 1));
+  const realDe = (l: { linea: string; rubro_id: string | null }, mes: number) => initial.realPlan.filter((r) => r.mes === mes && ((l.rubro_id && r.rubro_id === l.rubro_id) || r.linea === l.linea)).reduce((a, r) => a + Number(r.real), 0);
+  const realLinea = (l: { linea: string; rubro_id: string | null }) => Array.from({ length: 12 }, (_, i) => realDe(l, i + 1));
+  const [abierta, setAbierta] = useState<string | null>(null);   // línea con la cuadrícula mensual abierta
   const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
   const planTotal = sum(lineas.flatMap((l) => l.meses));
   const planAFecha = sum(lineas.flatMap((l) => l.meses.slice(0, mesActual)));
   const realTotal = sum(initial.realPlan.map((r) => Number(r.real)));
-  const porQuien = ORDEN.map((q) => ({ q, plan: sum(lineas.filter((l) => l.pagador === q).flatMap((l) => l.meses)), real: sum(lineas.filter((l) => l.pagador === q).flatMap((l) => realLinea(l.linea))) })).filter((x) => x.plan || x.real);
+  const porQuien = ORDEN.map((q) => ({ q, plan: sum(lineas.filter((l) => l.pagador === q).flatMap((l) => l.meses)), real: sum(lineas.filter((l) => l.pagador === q).flatMap((l) => realLinea(l))) })).filter((x) => x.plan || x.real);
 
   /* ---------- aportaciones: quién puso el dinero ---------- */
   const gastosAkela = initial.libro.filter((x) => x.concepto === "gasto");
@@ -97,34 +97,69 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
         <div className="g4">
           <div><label htmlFor="k-anio">Año</label><select id="k-anio" value={anio} onChange={(e) => router.push(`/akela?anio=${e.target.value}`)}>{initial.anios.map((a) => <option key={a} value={a}>{a}</option>)}</select></div>
           <div className="stat"><div className="v">{fmt(planTotal)}</div><div className="l">Presupuesto {anio}</div></div>
-          <div className="stat"><div className={"v " + (realTotal > planAFecha ? "neg" : "pos")}>{fmt(realTotal)}</div><div className="l">Real a la fecha · plan a la fecha {fmt(planAFecha)} ({pct(realTotal, planAFecha)})</div></div>
-          <div className="stat"><div className="v">{fmt(totYo)} <span className="hint">yo</span> · {fmt(totLM)} <span className="hint">LM</span></div><div className="l">Aportado en {anio}</div></div>
+          <div className="stat"><div className={"v " + (realTotal > planAFecha ? "neg" : "pos")}>{fmt(realTotal)}</div><div className="l">Real a la fecha · {pct(realTotal, planAFecha)} del plan a la fecha ({fmt(planAFecha)})</div></div>
+          <div className="stat"><div className="v">{fmt(fondoMxn)}</div><div className="l">Fondo Akela · {planTotal ? (fondoMxn / planTotal).toFixed(1) : "—"} años de presupuesto</div></div>
+        </div>
+        {/* avance del presupuesto total: barra horizontal con marca del mes */}
+        <div style={{ marginTop: 10 }}>
+          <div className="lbl" style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}><span><b>Presupuesto total {anio}</b> · real {fmt(realTotal)} de {fmt(planTotal)}</span><span>{mesActual ? `${MESN[mesActual - 1]} · ${Math.round((mesActual / 12) * 100)} % del año` : ""}</span></div>
+          <div style={{ position: "relative", height: 22, border: "1.5px solid var(--ink)", borderRadius: 11, background: "var(--cream)", overflow: "hidden" }}>
+            <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${planTotal ? Math.min(100, (realTotal / planTotal) * 100) : 0}%`, background: realTotal > planAFecha ? "var(--deu)" : "var(--aho)" }} />
+            {mesActual > 0 && <div style={{ position: "absolute", left: `${(mesActual / 12) * 100}%`, top: 0, bottom: 0, borderLeft: "2px dashed var(--ink)" }} title="Hoy" />}
+            <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", paddingLeft: 8, fontSize: 11, fontWeight: 700, color: "var(--ink)" }}>{pct(realTotal, planTotal)} gastado · {pct(realTotal, planAFecha)} vs plan a la fecha</div>
+          </div>
+        </div>
+        {/* aportaciones: barra apilada yo vs Luis Miguel */}
+        <div style={{ marginTop: 10 }}>
+          <div className="lbl" style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}><span><b>Quién ha puesto el dinero en {anio}</b></span><span>yo {fmt(totYo)} · Luis Miguel {fmt(totLM)} · ellos {fmt(sum(porMes.map((m) => m.papas)))}</span></div>
+          {(() => { const t = totYo + totLM + sum(porMes.map((m) => m.papas)) || 1; const py = (totYo / t) * 100, pl = (totLM / t) * 100, pp = 100 - py - pl; return (
+            <div style={{ display: "flex", height: 22, border: "1.5px solid var(--ink)", borderRadius: 11, overflow: "hidden", fontSize: 11, fontWeight: 700, color: "#fff" }}>
+              <div style={{ width: `${py}%`, background: "var(--c6)", display: "flex", alignItems: "center", paddingLeft: 8, whiteSpace: "nowrap", overflow: "hidden" }} title={`Yo: ${fmt(totYo)}`}>{py > 12 ? `yo ${Math.round(py)} %` : ""}</div>
+              <div style={{ width: `${pl}%`, background: "var(--nec)", display: "flex", alignItems: "center", paddingLeft: 8, whiteSpace: "nowrap", overflow: "hidden" }} title={`Luis Miguel: ${fmt(totLM)}`}>{pl > 12 ? `Luis Miguel ${Math.round(pl)} %` : ""}</div>
+              <div style={{ width: `${pp}%`, background: "var(--akela)", display: "flex", alignItems: "center", paddingLeft: 8, whiteSpace: "nowrap", overflow: "hidden" }} title="Pagado por papás con lo transferido">{pp > 12 ? `ellos ${Math.round(pp)} %` : ""}</div>
+            </div>); })()}
         </div>
       </div>
 
-      <h2>1 · Presupuesto {anio} · quién paga qué</h2>
-      <div className="stat-row">
-        {porQuien.map((x) => <div key={x.q} className="stat"><div className="v">{fmt(x.plan)}</div><div className="l">{QUIEN[x.q] ?? x.q} · real {fmt(x.real)}</div></div>)}
-      </div>
-      <div className="card">
-        <div className="ct"><span>Plan mes a mes vs real</span>
-          {!ro && <span style={{ display: "flex", gap: 8 }}><button className="btn ghost sm" type="button" onClick={proponer} title={`Llena las celdas vacías con el promedio real de ${anio - 1}`}>Proponer desde real {anio - 1}</button></span>}</div>
-        {ORDEN.filter((q) => lineas.some((l) => l.pagador === q)).map((q) => (
-          <Seccion key={q} titulo={`${QUIEN[q] ?? q} · plan ${fmt(sum(lineas.filter((l) => l.pagador === q).flatMap((l) => l.meses)))}`}>
-            <div className="tbl-cols"><TablaFija grupo="akela-plan"><table>
-              <thead><tr><th>Línea</th>{MESN.map((m) => <th key={m} className="n">{m}</th>)}<th className="n">Año</th></tr></thead>
-              <tbody>
-                {lineas.filter((l) => l.pagador === q).map((l) => { const re = realLinea(l.linea); const tp = sum(l.meses), tr = sum(re); return (
+      <h2>1 · Presupuesto {anio} · línea por línea</h2>
+      <div className="card full-bleed">
+        <div className="ct"><span>Plan vs real</span>
+          {!ro && <button className="btn ghost sm" type="button" onClick={proponer} title={`Llena las celdas vacías con el promedio real de ${anio - 1}`}>Proponer desde real {anio - 1}</button>}</div>
+        <div className="tbl"><table>
+          <thead><tr><th>Línea</th><th>Quién paga</th><th className="n">Mensual</th><th className="n">Plan anual</th><th className="n">Real a la fecha</th><th className="n">Plan a la fecha</th><th style={{ width: 220 }}>Avance</th><th className="n">Desviación</th><th></th></tr></thead>
+          <tbody>
+            {ORDEN.filter((q) => lineas.some((l) => l.pagador === q)).map((q) => (
+              <Fragment key={q}>
+                <tr className="sec"><td colSpan={9}>{QUIEN[q] ?? q} · plan {fmt(sum(lineas.filter((l) => l.pagador === q).flatMap((l) => l.meses)))} · real {fmt(sum(lineas.filter((l) => l.pagador === q).flatMap((l) => realLinea(l))))}</td></tr>
+                {lineas.filter((l) => l.pagador === q).map((l) => { const re = realLinea(l); const tp = sum(l.meses), tr = sum(re), tpf = sum(l.meses.slice(0, mesActual)); const uniforme = l.meses.every((v) => v === l.meses[0]); const av = tp ? Math.min(100, (tr / tp) * 100) : 0; const avf = tp ? Math.min(100, (tpf / tp) * 100) : 0; const des = tr - tpf; return (
                   <Fragment key={l.linea}>
-                    <tr className="lead"><td title={l.rubro_id ? "ligada a un subrubro de Gastos" : "sin subrubro: no se compara con real"}>{l.linea}{l.transferencia ? <span className="badge" style={{ background: "var(--nec)", marginLeft: 6 }}>transferencia</span> : null}{!ro && <> <button className="link" type="button" style={{ fontSize: 11 }} onClick={() => { const v = prompt(`Monto mensual para "${l.linea}" (se aplica a los 12 meses):`, String(l.meses[0] || "")); if (v != null && v !== "") setFila(l, Number(v)); }}>×12</button> <button className="del" type="button" onClick={() => borrarLinea(l)}>✕</button></>}</td>
-                      {l.meses.map((v, i) => <td key={i} className="n">{ro ? fmt(v) : <input type="number" defaultValue={v || ""} onBlur={(e) => Number(e.target.value) !== v && setCelda(l, i + 1, Number(e.target.value) || 0)} style={inp} />}</td>)}
-                      <td className="n">{fmt(tp)}</td></tr>
-                    <tr className="sub"><td style={{ paddingLeft: 18 }}>real{l.rubro_id ? "" : " (sin subrubro)"}</td>{re.map((v, i) => <td key={i} className={"n" + (v > l.meses[i] && l.meses[i] ? " neg" : "")}>{v ? fmt(v) : "·"}</td>)}<td className={"n" + (tr > tp && tp ? " neg" : "")}>{fmt(tr)}{tp ? ` · ${pct(tr, tp)}` : ""}</td></tr>
+                    <tr>
+                      <td style={{ fontWeight: 600, color: "var(--ink)" }}>{l.linea}{l.transferencia ? <span className="badge" style={{ background: "var(--nec)", marginLeft: 6 }}>transferencia</span> : null}{!l.rubro_id && <span className="hint" title="sin subrubro ligado: no se compara con real"> ·</span>}</td>
+                      <td>{l.pagador}</td>
+                      <td className="n">{ro ? (uniforme ? fmt(l.meses[0]) : "varía") : <input type="number" defaultValue={uniforme ? l.meses[0] || "" : ""} placeholder={uniforme ? "" : "varía"} onBlur={(e) => { const v = Number(e.target.value); if (e.target.value !== "" && (!uniforme || v !== l.meses[0])) setFila(l, v); }} style={inp} title="Se aplica a los 12 meses" />}</td>
+                      <td className="n" style={{ fontWeight: 700 }}>{fmt(tp)}</td>
+                      <td className={"n" + (des > 0 ? " neg" : "")}>{fmt(tr)}</td>
+                      <td className="n">{fmt(tpf)}</td>
+                      <td><div style={{ position: "relative", height: 12, border: "1px solid var(--ink)", borderRadius: 6, background: "var(--cream)", overflow: "hidden" }}><div style={{ width: `${av}%`, height: "100%", background: des > 0 ? "var(--deu)" : "var(--aho)" }} /><div style={{ position: "absolute", left: `${avf}%`, top: 0, bottom: 0, borderLeft: "2px dashed var(--ink)" }} /></div></td>
+                      <td className={"n " + (des > 0 ? "neg" : des < 0 ? "pos" : "")}>{tpf ? (des > 0 ? "+" : "") + fmt(des) : "·"}</td>
+                      <td style={{ whiteSpace: "nowrap" }}><button className="link" type="button" onClick={() => setAbierta(abierta === l.linea ? null : l.linea)}>{abierta === l.linea ? "ocultar meses" : "meses"}</button>{!ro && <> <button className="del" type="button" onClick={() => borrarLinea(l)}>✕</button></>}</td>
+                    </tr>
+                    {abierta === l.linea && (
+                      <tr><td colSpan={9} style={{ background: "var(--bone)", padding: "6px 10px" }}>
+                        <div className="tbl"><table style={{ fontSize: 12 }}>
+                          <thead><tr><th></th>{MESN.map((m) => <th key={m} className="n">{m}</th>)}<th className="n">Año</th></tr></thead>
+                          <tbody>
+                            <tr><td>plan</td>{l.meses.map((v, i) => <td key={i} className="n">{ro ? fmt(v) : <input type="number" defaultValue={v || ""} onBlur={(e) => Number(e.target.value) !== v && setCelda(l, i + 1, Number(e.target.value) || 0)} style={inp} />}</td>)}<td className="n" style={{ fontWeight: 700 }}>{fmt(tp)}</td></tr>
+                            <tr><td>real</td>{re.map((v, i) => <td key={i} className={"n" + (v > l.meses[i] && l.meses[i] ? " neg" : "")}>{v ? fmt(v) : "·"}</td>)}<td className="n" style={{ fontWeight: 700 }}>{fmt(tr)}</td></tr>
+                          </tbody>
+                        </table></div>
+                      </td></tr>)}
                   </Fragment>); })}
-              </tbody>
-            </table></TablaFija></div>
-          </Seccion>))}
-        {!lineas.length && <p className="hint">Sin plan para {anio}. {!ro && "Agrega líneas abajo o propón desde el año anterior."}</p>}
+              </Fragment>))}
+            {!lineas.length && <tr><td colSpan={9} className="hint">Sin plan para {anio}. {!ro && "Agrega líneas abajo o propón desde el año anterior."}</td></tr>}
+            {lineas.length > 0 && <tr className="tot"><td>Total</td><td /><td /><td className="n">{fmt(planTotal)}</td><td className="n">{fmt(realTotal)}</td><td className="n">{fmt(planAFecha)}</td><td /><td className={"n " + (realTotal - planAFecha > 0 ? "neg" : "pos")}>{(realTotal - planAFecha > 0 ? "+" : "") + fmt(realTotal - planAFecha)}</td><td /></tr>}
+          </tbody>
+        </table></div>
         {!ro && (
           <div className="g4" style={{ marginTop: 10 }}>
             <div><label htmlFor="n-linea">Nueva línea</label><input id="n-linea" type="text" value={nueva.linea} onChange={(e) => setNueva({ ...nueva, linea: e.target.value })} placeholder="p. ej. Jardinero" /></div>
@@ -133,7 +168,7 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
             <div><label htmlFor="n-monto">Mensual</label><div style={{ display: "flex", gap: 6 }}><input id="n-monto" type="number" value={nueva.monto} onChange={(e) => setNueva({ ...nueva, monto: e.target.value })} /><button className="btn sm" type="button" onClick={agregarLinea} disabled={busy}>+</button></div>
               <label style={{ fontSize: 11, display: "flex", gap: 4, alignItems: "center", marginTop: 4 }}><input type="checkbox" checked={nueva.transferencia} onChange={(e) => setNueva({ ...nueva, transferencia: e.target.checked })} /> es transferencia a papá/mamá</label></div>
           </div>)}
-        <p className="hint">Las líneas que pago yo se comparan con lo capturado en Gastos con libro Akela. Las transferencias a papá y mamá son lo que les mando; lo que ellos pagan con eso (súper, personal doméstico, IMSS…) queda como presupuesto de referencia. Rojo = real por arriba del plan.</p>
+        <p className="hint">«Mensual» se aplica a los 12 meses; para un mes distinto abre «meses». La barra muestra lo gastado del plan anual y la línea punteada dónde deberías ir hoy; rojo = por arriba del plan a la fecha. Las líneas que pago yo se comparan con Gastos (libro Akela); las transferencias son lo que les mando; lo que ellos pagan con eso queda como referencia.</p>
       </div>
 
       <h2>2 · Aportaciones {anio} · yo vs Luis Miguel</h2>
