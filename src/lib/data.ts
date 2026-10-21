@@ -119,7 +119,7 @@ export const UMA_DIARIA = 113.14;   // 2025–2026; actualizar cada febrero
 
 export async function loadFacturacion(supabase: SupabaseClient, anio: number): Promise<FacturacionData> {
   const desde = `${anio}-01-01`, hasta = `${anio}-12-31`;
-  const [{ data: { user } }, cfg, cfdis, sin, rubros, cuentas, ded, mensual, ext, sync, ing, anios] = await Promise.all([
+  const [{ data: { user } }, cfg, cfdis, sin, rubros, cuentas, libros, ded, mensual, ext, sync, ing, anios] = await Promise.all([
     supabase.auth.getUser(),
     supabase.from("app_config").select("rfc_propio").maybeSingle(),
     supabase.from("v_cfdi").select("*").gte("fecha", desde).lte("fecha", hasta).order("fecha", { ascending: false }).range(0, 4999),
@@ -127,6 +127,7 @@ export async function loadFacturacion(supabase: SupabaseClient, anio: number): P
       .gte("fecha", desde).lte("fecha", hasta).order("fecha", { ascending: false }).range(0, 9999),
     supabase.from("rubros").select("id,codigo,nombre,padre_id,clasificacion,emoji,activo,deduccion").eq("naturaleza", "gasto").eq("activo", true).order("orden").order("nombre"),
     supabase.from("cuentas").select("id,nombre,tipo,es_medio_pago").eq("activa", true).eq("es_medio_pago", true).order("nombre"),
+    supabase.from("libros").select("codigo,nombre").eq("activo", true),
     supabase.from("v_deducciones_anual").select("*").eq("anio", anio),
     supabase.from("v_cfdi_mensual").select("*").eq("anio", anio).order("mes"),
     supabase.from("v_facturas_ext").select("*").gte("mes", desde).lte("mes", hasta).order("mes", { ascending: false }),
@@ -146,6 +147,7 @@ export async function loadFacturacion(supabase: SupabaseClient, anio: number): P
     sinCfdi: must<GastoSinCfdi[]>(sin, "movimientos").map((m) => ({ ...m, monto_mxn: Number(m.monto_mxn) })),
     rubros: must<Rubro[]>(rubros, "rubros"),
     cuentas: must<Cuenta[]>(cuentas, "cuentas"),
+    libros: must<Catalogo[]>(libros, "libros"),
     deducciones: must<Record<string, unknown>[]>(ded, "deducciones").map(num) as unknown as DeduccionAnual[],
     mensual: must<Record<string, unknown>[]>(mensual, "cfdi mensual").map(num) as unknown as CfdiMensual[],
     extranjeras: must<FacturaExt[]>(ext, "extranjeras"),

@@ -23,6 +23,7 @@ export function Facturacion({ initial, vista = "resumen", filtro }: { initial: F
   const [ftipo, setFtipo] = useState(filtro?.tipo ?? ""); const [fmes, setFmes] = useState(filtro?.mes ?? ""); const [festado, setFestado] = useState(""); const [q, setQ] = useState(filtro?.q ?? "");
   const [creando, setCreando] = useState<Cfdi | null>(null);
   const [cMsi, setCMsi] = useState(0);   // 0 = un solo cargo; N = meses sin intereses
+  const [cLibro, setCLibro] = useState("");   // "" = según el rubro
   const [cCuenta, setCCuenta] = useState(initial.cuentas.find((c) => c.nombre === "AMEX")?.id ?? initial.cuentas[0]?.id ?? "");
   const aviso = (t: string) => { setToast(t); setTimeout(() => setToast(""), 9000); };
   const grupos = initial.rubros.filter((r) => !r.padre_id);
@@ -101,7 +102,7 @@ export function Facturacion({ initial, vista = "resumen", filtro }: { initial: F
     const rubro = initial.rubros.find((r) => r.id === c.rubro_id);
     if (!rubro) return aviso("Elige primero el rubro de la factura.");
     const grupo = initial.rubros.find((r) => r.id === rubro.padre_id);
-    const libro = ({ Akela: "AKELA", Bioongo: "BIOONGO", Periplo: "PERIPLO" } as Record<string, string>)[grupo?.nombre ?? ""] ?? "PERSONAL";
+    const libro = cLibro || (({ Akela: "AKELA", Bioongo: "BIOONGO", Periplo: "PERIPLO" } as Record<string, string>)[grupo?.nombre ?? ""] ?? "PERSONAL");
     setBusy(true);
     try {
       const n = cMsi > 1 ? cMsi : 1;
@@ -117,7 +118,7 @@ export function Facturacion({ initial, vista = "resumen", filtro }: { initial: F
       }
       await supabase.from("cfdi").update({ estado: "ligada" }).eq("uuid", c.uuid);
       await refrescar(c.uuid); setCreando(null); setCMsi(0);
-      aviso(`Gasto creado: ${rubro.nombre} ${fmt2(c.total)} (${initial.cuentas.find((x) => x.id === cCuenta)?.nombre})${n > 1 ? ` · ${n} MSI de ${fmt2(cuota)}` : ""}.`);
+      aviso(`Gasto creado: ${rubro.nombre} ${fmt2(c.total)} (${initial.cuentas.find((x) => x.id === cCuenta)?.nombre}) · libro ${libro}${n > 1 ? ` · ${n} MSI de ${fmt2(cuota)}` : ""}.`);
     } catch (e) { aviso("No se creó: " + (e as Error).message); alert("No se creó el gasto: " + (e as Error).message); } finally { setBusy(false); }
   };
   const setRubro = async (c: Cfdi, rubro_id: string) => {
@@ -339,10 +340,11 @@ export function Facturacion({ initial, vista = "resumen", filtro }: { initial: F
       {creando && (
         <div className="card">
           <div className="ct"><span>Crear gasto desde la factura · {fmt2(creando.total)} · {creando.fecha}</span><button className="btn ghost sm" type="button" onClick={() => setCreando(null)}>Cerrar</button></div>
-          <div className="g3">
+          <div className="g4">
             <div><label htmlFor="c-rubro">Rubro</label><select id="c-rubro" value={creando.rubro_id ?? ""} onChange={async (e) => { await setRubro(creando, e.target.value); const { data: v } = await supabase.from("v_cfdi").select("*").eq("uuid", creando.uuid).single(); if (v) setCreando(v as Cfdi); }}>
                 <option value="">— elige —</option>{grupos.map((g) => <optgroup key={g.id} label={g.nombre}>{subsDe(g.id).map((r) => <option key={r.id} value={r.id}>{r.nombre}</option>)}</optgroup>)}</select></div>
             <div><label htmlFor="c-cta">Pagado con</label><select id="c-cta" value={cCuenta} onChange={(e) => setCCuenta(e.target.value)}>{initial.cuentas.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}</select></div>
+            <div><label htmlFor="c-libro">Libro</label><select id="c-libro" value={cLibro} onChange={(e) => setCLibro(e.target.value)}><option value="">Según el rubro</option>{initial.libros.map((l) => <option key={l.codigo} value={l.codigo}>{l.nombre}</option>)}</select></div>
             <div><label htmlFor="c-msi">Meses sin intereses</label><select id="c-msi" value={cMsi} onChange={(e) => setCMsi(+e.target.value)}>
               <option value={0}>Un solo cargo</option>{[3, 6, 9, 12, 18, 24].map((n) => <option key={n} value={n}>{n} meses · {fmt2(creando.total / n)}/mes</option>)}</select></div>
           </div>

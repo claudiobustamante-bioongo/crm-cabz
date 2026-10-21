@@ -184,6 +184,7 @@ export interface FacturacionData {
   sinCfdi: GastoSinCfdi[];
   rubros: Rubro[];
   cuentas: Cuenta[];
+  libros: Catalogo[];
   deducciones: DeduccionAnual[];
   mensual: CfdiMensual[];
   extranjeras: FacturaExt[];
