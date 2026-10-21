@@ -12,14 +12,16 @@ export const TABS = [
   { href: "/analiticas", label: "Analíticas", title: "Analíticas · a dónde se va tu vida", ready: false },
 ];
 
-export function Tabs() {
+export function Tabs({ permitidas, rol }: { permitidas?: string[]; rol?: string | null }) {
   const path = usePathname();
+  const visibles = permitidas ? TABS.filter((t) => permitidas.some((p) => t.href.startsWith(p))) : TABS;
   const cur = TABS.find((t) => path.startsWith(t.href));
   return (
     <>
       <h1>{cur?.title ?? "CRM CABZ"}</h1>
       <nav className="tabs" aria-label="Secciones">
-        {TABS.map((t) =>
+        {rol && rol !== "dueno" && <span className="badge" style={{ background: "var(--gold-dark)", alignSelf: "center" }}>vista {rol} · solo lectura</span>}
+        {visibles.map((t) =>
           t.ready ? (
             <Link key={t.href} href={t.href} aria-current={path.startsWith(t.href) ? "page" : undefined}>{t.label}</Link>
           ) : (

@@ -14,7 +14,8 @@ const TIPO_COLOR = { emitida: "var(--c6)", recibida: "var(--aho)", nomina: "var(
 const ESTADO = { nueva: ["Nueva", "var(--gus)"], ligada: ["Ligada", "var(--nec)"], revisar: ["Revisar", "var(--deu)"], sin_gasto: ["Sin gasto", "var(--gray-soft)"] } as const;
 const DED_LABEL: Record<string, string> = { gmm: "Primas de gastos médicos mayores", medico: "Honorarios médicos, dentales y hospital", ppr: "Aportaciones a PPR / AFORE voluntaria", funeral: "Gastos funerarios", colegiatura: "Colegiaturas", hipoteca: "Intereses hipotecarios", donativo: "Donativos" };
 
-export function Facturacion({ initial, vista = "resumen", filtro }: { initial: FacturacionData; vista?: "resumen" | "detalle"; filtro?: { mes?: string; tipo?: string; q?: string } }) {
+export function Facturacion({ initial, vista = "resumen", filtro, soloLectura = false }: { initial: FacturacionData; vista?: "resumen" | "detalle"; filtro?: { mes?: string; tipo?: string; q?: string }; soloLectura?: boolean }) {
+  const ro = soloLectura;
   const base = vista === "detalle" ? "/facturacion/detalle" : "/facturacion";
   const router = useRouter();
   const supabase = createClient();
@@ -221,7 +222,7 @@ export function Facturacion({ initial, vista = "resumen", filtro }: { initial: F
       <div className="idea"><b>Cómo funciona</b>Sube tus facturas a la carpeta de Drive «01 - Facturas» (o suéltalas aquí): se guardan en tu Storage privado y se leen emisor, UUID, impuestos y total. Ponle rubro a una factura y todas las de ese emisor lo heredan. Abajo, lo que llevas deducible del año: PPR y seguros de gastos médicos, con sus topes.</div>
 
       {vista === "resumen" && (<>
-      <div className={"card" + (busy ? " spin" : "")}>
+      {!ro && <div className={"card" + (busy ? " spin" : "")}>
         <div className="ct"><span>Facturas desde Drive</span><span className="tag">{initial.rfcPropio ? `tu RFC: ${initial.rfcPropio}` : "sin RFC propio: todo entra como recibida (corre 11_rfc.sql)"}</span></div>
         <div className="g2">
           <div>
@@ -239,7 +240,7 @@ export function Facturacion({ initial, vista = "resumen", filtro }: { initial: F
           </div>
         </div>
         <p className="hint">Mexicanas = XML CFDI (el PDF se anexa si se llama igual o trae el UUID). PDF sin XML en «Facturas Extranjeras» = extranjera. Cada archivo se acomoda solo en Mex o Extranjeras / año / mes. Duplicados por UUID se ignoran; nómina y emitidas quedan «sin gasto».</p>
-      </div>
+      </div>}
 
       <div className="g2" style={{ marginBottom: 6 }}>
         <div><label htmlFor="f-anio">Año</label><select id="f-anio" value={initial.anio} onChange={(e) => router.push(`${base}?anio=${e.target.value}`)}>{initial.anios.map((a) => <option key={a} value={a}>{a}</option>)}</select></div>
@@ -386,19 +387,19 @@ export function Facturacion({ initial, vista = "resumen", filtro }: { initial: F
                 <td style={{ whiteSpace: "normal", maxWidth: 160 }}>{c.receptor_nombre}</td>
                 <td><span className="badge" style={{ background: ESTADO[c.estado][1] }}>{ESTADO[c.estado][0]}</span>{c.movimiento && <div style={{ fontSize: 11, color: "var(--gray-soft)", whiteSpace: "normal" }}>{c.movimiento} · {c.cuenta}</div>}</td>
                 <td style={{ whiteSpace: "nowrap" }}>
-                  {c.estado !== "ligada" && c.tipo === "recibida" && <><button className="link" type="button" onClick={() => { setCreando(c); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Crear gasto</button> · <button className="link" type="button" onClick={() => setLigando(ligando === c.uuid ? null : c.uuid)}>Ligar a gasto</button> · </>}
+                  {!ro && c.estado !== "ligada" && c.tipo === "recibida" && <><button className="link" type="button" onClick={() => { setCreando(c); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Crear gasto</button> · <button className="link" type="button" onClick={() => setLigando(ligando === c.uuid ? null : c.uuid)}>Ligar a gasto</button> · </>}
                   {ligando === c.uuid && (
                     <div style={{ marginTop: 4, whiteSpace: "normal" }}>
                       <Buscador items={candidatos(c)} texto={(g) => `${g.fecha} ${g.grupo} ${g.rubro} ${g.descripcion} ${g.cuenta} ${g.monto_mxn.toFixed(2)} ${Math.round(g.monto_mxn)}`} placeholder="buscar gasto: rubro, cuenta, monto, fecha…"
                         render={(g) => <>{g.fecha} · <b>{g.grupo} › {g.rubro}</b> · {g.cuenta} · {fmt2(g.monto_mxn)}{Math.abs(g.monto_mxn - c.total_mxn) < 1 ? " ✓" : ""}{g.facturas ? <span className="badge" style={{ background: "var(--aho)", marginLeft: 6 }}>ya tiene {g.facturas}</span> : null}</>} onElegir={(g) => ligarA(c, g.id)} />
                       <button className="link" type="button" onClick={() => setLigando(null)}>cancelar</button>
                     </div>)}
-                  {c.estado === "ligada" && <><button className="link" type="button" onClick={() => desligar(c)}>Desligar</button> · </>}
-                  {c.estado === "nueva" && <><button className="link" type="button" onClick={() => setEstado(c, "sin_gasto")}>Sin gasto</button> · </>}
+                  {!ro && c.estado === "ligada" && <><button className="link" type="button" onClick={() => desligar(c)}>Desligar</button> · </>}
+                  {!ro && c.estado === "nueva" && <><button className="link" type="button" onClick={() => setEstado(c, "sin_gasto")}>Sin gasto</button> · </>}
                   <button className="link" type="button" onClick={() => abrir(c.xml_path)}>XML</button>{c.pdf_path && <> · <button className="link" type="button" onClick={() => abrir(c.pdf_path)}>PDF</button></>} · <button className="link" type="button" title={c.link_drive ? "Abrir en Drive" : "Buscar en Drive por UUID"} onClick={() => drive(c)}>{c.link_drive ? "Drive ↗" : "Drive ?"}</button>
-                  {" "}<button className="del" type="button" aria-label="Borrar" onClick={() => borrar(c)}>✕</button>
+                  {!ro && <>{" "}<button className="del" type="button" aria-label="Borrar" onClick={() => borrar(c)}>✕</button></>}
                 </td>
-                <td>{c.tipo === "recibida" ? (
+                <td>{c.tipo === "recibida" ? ro ? (c.rubro ? `${c.grupo} › ${c.rubro}` : "—") : (
                   <select value={c.rubro_id ?? ""} onChange={(e) => setRubro(c, e.target.value)} style={{ padding: "3px 5px", fontSize: 12, width: 170 }}>
                     <option value="">— rubro —</option>
                     {grupos.map((g) => <optgroup key={g.id} label={g.nombre}>{subsDe(g.id).map((r) => <option key={r.id} value={r.id}>{r.nombre}</option>)}</optgroup>)}
@@ -406,10 +407,10 @@ export function Facturacion({ initial, vista = "resumen", filtro }: { initial: F
                 <td>{c.uso_cfdi}</td>
                 <td className="n">{fmt2(c.subtotal)}</td><td className="n">{fmt2(c.iva)}</td><td className="n">{fmt2(c.ret_isr)}</td><td className="n">{fmt2(c.ret_iva)}</td><td className="n">{c.tc ?? ""}</td>
                 <td>{c.forma_pago ? FORMA_PAGO[c.forma_pago] ?? c.forma_pago : ""}</td><td>{c.metodo_pago}</td>
-                <td><input type="date" defaultValue={c.vencimiento ?? ""} onBlur={(e) => e.target.value !== (c.vencimiento ?? "") && editar(c, "vencimiento", e.target.value)} style={{ padding: "3px 5px", fontSize: 12, width: 130 }} /></td>
-                <td><input type="url" defaultValue={c.link_drive ?? ""} placeholder="https://drive…" onBlur={(e) => e.target.value !== (c.link_drive ?? "") && editar(c, "link_drive", e.target.value)} style={{ padding: "3px 5px", fontSize: 12, width: 120 }} /></td>
+                <td>{ro ? c.vencimiento ?? "" : <input type="date" defaultValue={c.vencimiento ?? ""} onBlur={(e) => e.target.value !== (c.vencimiento ?? "") && editar(c, "vencimiento", e.target.value)} style={{ padding: "3px 5px", fontSize: 12, width: 130 }} />}</td>
+                <td>{ro ? (c.link_drive ? <a href={c.link_drive} target="_blank" rel="noreferrer">Drive ↗</a> : "") : <input type="url" defaultValue={c.link_drive ?? ""} placeholder="https://drive…" onBlur={(e) => e.target.value !== (c.link_drive ?? "") && editar(c, "link_drive", e.target.value)} style={{ padding: "3px 5px", fontSize: 12, width: 120 }} />}</td>
                 <td>{c.confianza ?? (c.xml_path ? "alta (XML)" : "")}</td>
-                <td><input type="text" defaultValue={c.notas ?? ""} onBlur={(e) => e.target.value !== (c.notas ?? "") && editar(c, "notas", e.target.value)} style={{ padding: "3px 5px", fontSize: 12, width: 140 }} /></td>
+                <td>{ro ? c.notas ?? "" : <input type="text" defaultValue={c.notas ?? ""} onBlur={(e) => e.target.value !== (c.notas ?? "") && editar(c, "notas", e.target.value)} style={{ padding: "3px 5px", fontSize: 12, width: 140 }} />}</td>
                 <td style={{ whiteSpace: "normal", maxWidth: 160, fontSize: 11 }}>{c.xml_nombre}{c.pdf_nombre ? ` · ${c.pdf_nombre}` : ""}</td>
                 <td>{c.emisor_rfc}</td><td>{c.receptor_rfc}</td><td>{c.serie}</td><td>{c.folio}</td>
                 <td style={{ fontFamily: "monospace", fontSize: 11 }} title={c.uuid}>{c.uuid.toUpperCase()}</td>

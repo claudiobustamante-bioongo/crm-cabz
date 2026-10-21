@@ -13,7 +13,8 @@ import { TablaAnual } from "@/components/inversiones/TablaAnual";
 const usd = (n: number) => (n < 0 ? "-" : "") + "US$" + Math.abs(n).toLocaleString("en-US", { maximumFractionDigits: 0 });
 const EST: Record<Obligacion["estado"], [string, string]> = { pendiente: ["Pendiente", "var(--gus)"], presentada: ["Presentada", "var(--nec)"], pagada: ["Pagada", "var(--aho)"], no_aplica: ["No aplica", "var(--gray-soft)"] };
 
-export function Contabilidad({ initial }: { initial: ContabilidadData }) {
+export function Contabilidad({ initial, soloLectura = false }: { initial: ContabilidadData; soloLectura?: boolean }) {
+  const ro = soloLectura;
   const router = useRouter();
   const supabase = createClient();
   const [busy, setBusy] = useState(false);
@@ -114,7 +115,7 @@ export function Contabilidad({ initial }: { initial: ContabilidadData }) {
             <tr className="tot"><td>Año</td><td className="n">{fmt(sumM("emitidas_subtotal"))}</td><td className="n">{fmt(sumM("emitidas_iva"))}</td><td className="n">{fmt(sumM("emitidas_ret_isr"))}</td><td className="n">{fmt(sumM("emitidas_ret_iva"))}</td><td className="n">{fmt(sumM("recibidas_total"))}</td><td className="n">{fmt(sumM("recibidas_iva_acreditable"))}</td><td className="n">{fmt(sumM("emitidas_iva") - sumM("emitidas_ret_iva") - sumM("recibidas_iva_acreditable"))}</td><td className="n">{fmt(sumM("nomina_bruto"))}</td><td className="n">{fmt(sumM("nomina_isr"))}</td></tr>
           </tbody>
         </table></TablaFija>
-        <p className="hint"><button className="link" type="button" onClick={recalcularNomina} disabled={busy}>Releer XML de nómina</button> (corrige ISR y bruto de recibos ya cargados). * = tomado de lo capturado en Ingresos porque ese mes no hay CFDI en el CRM (en nómina solo se conoce el neto; sube los XML de nómina para bruto e ISR). «Gastos facturados» abre las facturas del mes con sus XML, PDF y Drive. IVA acreditable = IVA de recibidas a tu RFC con uso distinto de D0x/S01; el contador decide qué es estrictamente indispensable.</p>
+        <p className="hint">{!ro && <><button className="link" type="button" onClick={recalcularNomina} disabled={busy}>Releer XML de nómina</button> (corrige ISR y bruto de recibos ya cargados). </>}* = tomado de lo capturado en Ingresos porque ese mes no hay CFDI en el CRM (en nómina solo se conoce el neto; sube los XML de nómina para bruto e ISR). «Gastos facturados» abre las facturas del mes con sus XML, PDF y Drive. IVA acreditable = IVA de recibidas a tu RFC con uso distinto de D0x/S01; el contador decide qué es estrictamente indispensable.</p>
       </div>
 
       <h2>2 · Inversiones · {anio}</h2>
@@ -140,10 +141,11 @@ export function Contabilidad({ initial }: { initial: ContabilidadData }) {
           <tbody>
             {perdidas.map((p, i) => (
               <tr key={i} style={p.anio === anio ? { fontWeight: 600 } : undefined}><td>{p.anio}</td><td style={{ whiteSpace: "normal" }}>{p.concepto}</td><td className={"n" + (p.resultado < 0 ? " neg" : "")}>{p.origen === "ibkr" ? fmt(p.resultado) : "—"}</td><td className="n">{p.perdida ? fmt(p.perdida) : "·"}</td><td className="n">{p.aplicada ? fmt(p.aplicada) : "·"}</td><td className={"n" + (p.remanente ? " neg" : "")}>{p.remanente ? fmt(p.remanente) : "·"}</td><td>{p.vence || ""}</td>
-                <td>{p.origen === "ajuste" && <button className="del" type="button" onClick={() => { const a = ajustes.find((x) => x.anio === p.anio && x.concepto === p.concepto); if (a) borrarAjuste(a); }}>✕</button>}</td></tr>))}
+                <td>{!ro && p.origen === "ajuste" && <button className="del" type="button" onClick={() => { const a = ajustes.find((x) => x.anio === p.anio && x.concepto === p.concepto); if (a) borrarAjuste(a); }}>✕</button>}</td></tr>))}
             {!perdidas.length && <tr><td colSpan={8} className="hint">Sin resultados realizados aún.</td></tr>}
           </tbody>
         </table></div>
+        {!ro && (<>
         <div className="g4" style={{ marginTop: 8 }}>
           <div><label htmlFor="a-anio">Ajuste · ejercicio</label><input id="a-anio" type="number" value={nuevo.anio} onChange={(e) => setNuevo({ ...nuevo, anio: +e.target.value })} /></div>
           <div><label htmlFor="a-tipo">Tipo</label><select id="a-tipo" value={nuevo.tipo} onChange={(e) => setNuevo({ ...nuevo, tipo: e.target.value as AjusteFiscal["tipo"] })}><option value="perdida_acciones">Pérdida acciones/ETF (previa)</option><option value="perdida_actividad">Pérdida actividad empresarial</option><option value="otro">Otro ajuste</option></select></div>
@@ -151,6 +153,7 @@ export function Contabilidad({ initial }: { initial: ContabilidadData }) {
           <div><label htmlFor="a-monto">Monto MXN · ya amortizado</label><div style={{ display: "flex", gap: 6 }}><input id="a-monto" type="number" value={nuevo.monto} onChange={(e) => setNuevo({ ...nuevo, monto: e.target.value })} /><input type="number" value={nuevo.amortizado} onChange={(e) => setNuevo({ ...nuevo, amortizado: e.target.value })} placeholder="0" /></div></div>
         </div>
         <div className="center" style={{ marginTop: 6 }}><button className="btn ghost sm" type="button" onClick={agregarAjuste}>+ Agregar ajuste</button></div>
+        </>)}
         <p className="hint">Los años con resultado realizado negativo generan pérdida que se aplica sola contra ganancias de ejercicios siguientes. Para pérdidas declaradas antes de que existiera el CRM (o correcciones del contador), agrégalas aquí con lo ya amortizado.</p>
       </div>
 
@@ -186,24 +189,24 @@ export function Contabilidad({ initial }: { initial: ContabilidadData }) {
 
       <h2>4 · Calendario fiscal · {anio}</h2>
       <div className="card">
-        <div className="ct"><span>Obligaciones</span>{!obligaciones.length && <button className="btn ghost sm" type="button" onClick={generarCalendario}>Generar calendario {anio}</button>}</div>
+        <div className="ct"><span>Obligaciones</span>{!ro && !obligaciones.length && <button className="btn ghost sm" type="button" onClick={generarCalendario}>Generar calendario {anio}</button>}</div>
         <div className="tbl"><table>
           <thead><tr><th>Periodo</th><th>Obligación</th><th>Vence</th><th>Estado</th><th className="n">Monto</th><th>Notas</th></tr></thead>
           <tbody>
             {obligaciones.map((o) => (
               <tr key={o.id} style={o.estado === "pendiente" && o.vence < new Date().toISOString().slice(0, 10) ? { color: "var(--deu)" } : undefined}>
                 <td>{MESN[o.mes - 1]} {String(o.anio).slice(2)}</td><td style={{ whiteSpace: "normal" }}>{o.obligacion}</td><td>{o.vence}</td>
-                <td><select value={o.estado} onChange={(e) => setObl(o, { estado: e.target.value as Obligacion["estado"] })} style={{ padding: "3px 5px", fontSize: 12, background: EST[o.estado][1] }}>{(Object.keys(EST) as Obligacion["estado"][]).map((k) => <option key={k} value={k}>{EST[k][0]}</option>)}</select></td>
-                <td className="n"><input type="number" defaultValue={o.monto ?? ""} onBlur={(e) => Number(e.target.value) !== (o.monto ?? 0) && setObl(o, { monto: Number(e.target.value) || null })} style={{ padding: "3px 5px", fontSize: 12, width: 100, textAlign: "right" }} /></td>
-                <td><input type="text" defaultValue={o.notas ?? ""} onBlur={(e) => e.target.value !== (o.notas ?? "") && setObl(o, { notas: e.target.value || null })} style={{ padding: "3px 5px", fontSize: 12, width: 160 }} /></td>
+                <td>{ro ? <span className="badge" style={{ background: EST[o.estado][1] }}>{EST[o.estado][0]}</span> : <select value={o.estado} onChange={(e) => setObl(o, { estado: e.target.value as Obligacion["estado"] })} style={{ padding: "3px 5px", fontSize: 12, background: EST[o.estado][1] }}>{(Object.keys(EST) as Obligacion["estado"][]).map((k) => <option key={k} value={k}>{EST[k][0]}</option>)}</select>}</td>
+                <td className="n">{ro ? (o.monto != null ? fmt(o.monto) : "") : <input type="number" defaultValue={o.monto ?? ""} onBlur={(e) => Number(e.target.value) !== (o.monto ?? 0) && setObl(o, { monto: Number(e.target.value) || null })} style={{ padding: "3px 5px", fontSize: 12, width: 100, textAlign: "right" }} />}</td>
+                <td>{ro ? o.notas ?? "" : <input type="text" defaultValue={o.notas ?? ""} onBlur={(e) => e.target.value !== (o.notas ?? "") && setObl(o, { notas: e.target.value || null })} style={{ padding: "3px 5px", fontSize: 12, width: 160 }} />}</td>
               </tr>))}
             {!obligaciones.length && <tr><td colSpan={6} className="hint">Pulsa «Generar calendario»: pagos provisionales ISR/IVA (día 17), DIOT y declaración anual.</td></tr>}
           </tbody>
         </table></div>
       </div>
 
-      <h2>5 · Accesos</h2>
-      <div className="card"><p className="hint" style={{ margin: 0 }}>Cuando activemos el login del contador, verá esta pestaña y Facturación (solo lectura), sin Gastos, Akela ni net worth. Mientras, compártele el Excel y el ZIP.</p></div>
+      {!ro && <><h2>5 · Accesos</h2>
+      <div className="card"><p className="hint" style={{ margin: 0 }}>Para dar acceso al contador: Supabase → Authentication → Users → <b>Invite user</b> con su correo; luego corre en SQL: <code>insert into accesos (user_id, rol, nombre) select id, &apos;contador&apos;, &apos;Nombre&apos; from auth.users where email = &apos;su@correo.com&apos;;</code>. Entra con ese correo en crm-cabz.vercel.app y ve solo Contabilidad y Facturación, sin poder cambiar nada. Para quitarlo: <code>delete from accesos where user_id = (select id from auth.users where email = &apos;su@correo.com&apos;);</code></p></div></>}
 
       {toast && <div className="toast" role="status">{toast}</div>}
     </section>
