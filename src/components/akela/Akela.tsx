@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { AkelaData, PlanAkela } from "@/lib/types";
 import { fmt, fmt2, MESN, ml } from "@/lib/format";
+import { TablaFija } from "@/components/TablaFija";
 
 const usd = (n: number) => "US$" + Math.round(n).toLocaleString("en-US");
 const QUIEN: Record<string, string> = { CABZ: "Pago yo directamente", CABU: "Transferencia a papá · él paga", MPZB: "Transferencia a mamá · ella paga", HAMB: "Luis Miguel" };
@@ -32,10 +33,13 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
   const realDe = (l: { linea: string; rubro_id: string | null }, mes: number) => initial.realPlan.filter((r) => r.mes === mes && ((l.rubro_id && r.rubro_id === l.rubro_id) || r.linea === l.linea)).reduce((a, r) => a + Number(r.real), 0);
   const realLinea = (l: { linea: string; rubro_id: string | null }) => Array.from({ length: 12 }, (_, i) => realDe(l, i + 1));
   const [abierta, setAbierta] = useState<string | null>(null);   // línea con la cuadrícula mensual abierta
+  const [vista, setVista] = useState<"resumen" | "cuadricula">("resumen");
+  const [verReal, setVerReal] = useState(true);
   const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
   const planTotal = sum(lineas.flatMap((l) => l.meses));
   const planAFecha = sum(lineas.flatMap((l) => l.meses.slice(0, mesActual)));
   const realTotal = sum(initial.realPlan.map((r) => Number(r.real)));
+  const realSinLinea = useMemo(() => { const m = new Map<string, number>(); initial.realPlan.forEach((r) => { if (!Number(r.real)) return; if (lineas.some((l) => (l.rubro_id && r.rubro_id === l.rubro_id) || r.linea === l.linea)) return; m.set(r.linea, (m.get(r.linea) ?? 0) + Number(r.real)); }); return [...m].map(([linea, real]) => ({ linea, real })); }, [initial.realPlan, lineas]);
   const porQuien = ORDEN.map((q) => ({ q, plan: sum(lineas.filter((l) => l.pagador === q).flatMap((l) => l.meses)), real: sum(lineas.filter((l) => l.pagador === q).flatMap((l) => realLinea(l))) })).filter((x) => x.plan || x.real);
 
   /* ---------- aportaciones: quién puso el dinero ---------- */
@@ -79,7 +83,7 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
   };
   const proponer = async (modo: "anual" | "ult3") => {
     if (!confirm(`Llenar el plan ${anio} con ${modo === "ult3" ? "el promedio de los últimos 3 meses" : "el promedio anual"} de ${anio - 1} (solo celdas vacías)?`)) return;
-    const { data, error } = await supabase.rpc("proponer_plan_akela", { p_de: anio - 1, p_a: anio, p_modo: modo });
+    const { data, error } = await supabase.rpc("proponer_plan_akela", { p_de: anio - 1, p_a: anio, p_meses: modo === "ult3" ? 3 : null });
     if (error) return aviso(error.message + (/function/i.test(error.message) ? " (corre 32_plan_akela_2026.sql)" : "")); aviso(`${data} celdas propuestas.`); window.location.reload();
   };
   const guardarParams = async () => {
@@ -125,8 +129,28 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
       <h2>1 · Presupuesto {anio} · línea por línea</h2>
       <div className="card full-bleed">
         <div className="ct"><span>Plan vs real</span>
+          <span className="pills" style={{ margin: 0 }}><button type="button" className="pill" aria-pressed={vista === "resumen"} onClick={() => setVista("resumen")}>Resumen</button><button type="button" className="pill" aria-pressed={vista === "cuadricula"} onClick={() => setVista("cuadricula")}>Cuadrícula 12 meses</button>{vista === "cuadricula" && <label style={{ display: "inline-flex", gap: 4, alignItems: "center", margin: "0 0 0 8px", fontSize: 12 }}><input type="checkbox" checked={verReal} onChange={(e) => setVerReal(e.target.checked)} /> ver real</label>}</span>
           {!ro && <span style={{ display: "flex", gap: 6 }}><button className="btn ghost sm" type="button" onClick={() => proponer("anual")} title={`Promedio de los 12 meses de ${anio - 1} (real si hay, si no plan)`}>Proponer: promedio {anio - 1}</button><button className="btn ghost sm" type="button" onClick={() => proponer("ult3")} title={`Promedio de los últimos 3 meses con datos de ${anio - 1}`}>Proponer: últimos 3 meses</button></span>}</div>
-        <div className="tbl"><table>
+        {vista === "cuadricula" && (
+          <TablaFija grupo="akela-grid" alto="70vh"><table style={{ fontSize: 12 }}>
+            <thead><tr><th>Línea</th><th>Quién</th>{MESN.map((m, i) => <th key={m} className="n" style={i + 1 === mesActual ? { textDecoration: "underline" } : undefined}>{m}</th>)}<th className="n">Año</th></tr></thead>
+            <tbody>
+              {ORDEN.filter((q) => lineas.some((l) => l.pagador === q)).map((q) => (
+                <Fragment key={q}>
+                  <tr className="sec"><td colSpan={15}>{QUIEN[q] ?? q}</td></tr>
+                  {lineas.filter((l) => l.pagador === q).map((l) => { const re = realLinea(l); return (
+                    <Fragment key={l.linea}>
+                      <tr className={verReal ? "lead" : undefined}><td style={{ fontWeight: 600, color: "var(--ink)", whiteSpace: "nowrap" }}>{l.linea}</td><td>{l.pagador}</td>
+                        {l.meses.map((v, i) => <td key={i} className="n" style={{ padding: "2px 4px" }}>{ro ? (v ? fmt(v) : "·") : <input type="number" defaultValue={v || ""} onBlur={(e) => Number(e.target.value) !== v && setCelda(l, i + 1, Number(e.target.value) || 0)} style={{ width: 80, padding: "2px 4px", textAlign: "right" }} />}</td>)}
+                        <td className="n" style={{ fontWeight: 700 }}>{fmt(sum(l.meses))}</td></tr>
+                      {verReal && <tr className="sub"><td style={{ paddingLeft: 18 }}>real</td><td />{re.map((v, i) => <td key={i} className={"n" + (v > l.meses[i] && l.meses[i] ? " neg" : "")}>{v ? fmt(v) : "·"}</td>)}<td className="n">{fmt(sum(re))}</td></tr>}
+                    </Fragment>); })}
+                </Fragment>))}
+              <tr className="tot"><td>Total plan</td><td />{Array.from({ length: 12 }, (_, i) => <td key={i} className="n">{fmt(sum(lineas.map((l) => l.meses[i])))}</td>)}<td className="n">{fmt(planTotal)}</td></tr>
+              {verReal && <tr className="tot"><td>Total real</td><td />{Array.from({ length: 12 }, (_, i) => <td key={i} className="n">{fmt(sum(lineas.map((l) => realLinea(l)[i])))}</td>)}<td className="n">{fmt(realTotal)}</td></tr>}
+            </tbody>
+          </table></TablaFija>)}
+        {vista === "resumen" && <div className="tbl"><table>
           <thead><tr><th>Línea</th><th>Quién paga</th><th className="n">Mensual</th><th className="n">Plan anual</th><th className="n">Real a la fecha</th><th className="n">Plan a la fecha</th><th style={{ width: 220 }}>Avance</th><th className="n">Desviación</th><th></th></tr></thead>
           <tbody>
             {ORDEN.filter((q) => lineas.some((l) => l.pagador === q)).map((q) => (
@@ -160,7 +184,8 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
             {!lineas.length && <tr><td colSpan={9} className="hint">Sin plan para {anio}. {!ro && "Agrega líneas abajo o propón desde el año anterior."}</td></tr>}
             {lineas.length > 0 && <tr className="tot"><td>Total</td><td /><td /><td className="n">{fmt(planTotal)}</td><td className="n">{fmt(realTotal)}</td><td className="n">{fmt(planAFecha)}</td><td /><td className={"n " + (realTotal - planAFecha > 0 ? "neg" : "pos")}>{(realTotal - planAFecha > 0 ? "+" : "") + fmt(realTotal - planAFecha)}</td><td /></tr>}
           </tbody>
-        </table></div>
+        </table></div>}
+        {realSinLinea.length > 0 && <p className="hint">Real {anio} sin línea en el plan: {realSinLinea.map((r) => `${r.linea} ${fmt(r.real)}`).join(" · ")}. Agrega la línea ligada a ese subrubro para compararla.</p>}
         {!ro && (
           <div className="g4" style={{ marginTop: 10 }}>
             <div><label htmlFor="n-linea">Nueva línea</label><input id="n-linea" type="text" value={nueva.linea} onChange={(e) => setNueva({ ...nueva, linea: e.target.value })} placeholder="p. ej. Jardinero" /></div>
