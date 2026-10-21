@@ -69,6 +69,7 @@ export interface GastosData {
   movimientos: Movimiento[];
   asignaciones: Asignacion[];
   cfdisSinLigar: CfdiMini[];   // recibidas del año sin gasto ligado, para enlazar desde la lista
+  facturasPorMov: Record<string, number>;   // cuántas facturas tiene cada gasto
 }
 export interface CfdiMini { uuid: string; fecha: string; emisor_nombre: string | null; total_mxn: number; concepto: string | null }
 
@@ -171,7 +172,7 @@ export interface Cfdi {
 export interface CfdiMensual { anio: number; mes: string; tipo: string; facturas: number; total_mxn: number; iva: number; ret_isr: number; ret_iva: number; por_ligar: number; notas_credito?: number; pagos?: number }
 
 /** Gasto sin CFDI, candidato a ligar. */
-export interface GastoSinCfdi { id: string; fecha: string; descripcion: string; grupo: string; rubro: string; rubro_id: string | null; cuenta: string; monto_mxn: number }
+export interface GastoSinCfdi { id: string; fecha: string; descripcion: string; grupo: string; rubro: string; rubro_id: string | null; cuenta: string; monto_mxn: number; facturas?: number }
 
 export interface DeduccionAnual { anio: number; categoria: string; registrado: number; con_comprobante: number; movimientos: number; facturas: number }
 

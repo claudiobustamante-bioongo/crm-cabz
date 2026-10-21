@@ -7,6 +7,7 @@ import type { Cfdi, FacturacionData } from "@/lib/types";
 import { fmt, fmt2, mesKey, ml } from "@/lib/format";
 import { parseCfdi, FORMA_PAGO } from "@/lib/cfdi";
 import { TablaFija } from "@/components/TablaFija";
+import { Buscador } from "@/components/Buscador";
 
 const TIPO_LABEL = { emitida: "Emitida", recibida: "Recibida", nomina: "Nómina" } as const;
 const TIPO_COLOR = { emitida: "var(--c6)", recibida: "var(--aho)", nomina: "var(--nec)" } as const;
@@ -123,19 +124,15 @@ export function Facturacion({ initial, vista = "resumen", filtro }: { initial: F
   };
   /* ---------- ligar a un gasto ya registrado ---------- */
   const [ligando, setLigando] = useState<string | null>(null);   // uuid de la factura
-  const [sinCfdi, setSinCfdi] = useState(initial.sinCfdi);
+  const sinCfdi = initial.sinCfdi;   // todos los gastos del año (con o sin factura)
   const candidatos = (c: Cfdi) => [...sinCfdi].sort((a, b) => {
     const d = (g: typeof a) => Math.abs(g.monto_mxn - c.total_mxn) / Math.max(1, c.total_mxn) + Math.abs(new Date(g.fecha).getTime() - new Date(c.fecha).getTime()) / 8.64e7 / 60;
     return d(a) - d(b);
   });
   const ligarA = async (c: Cfdi, movId: string) => {
-    if (!movId) return;
-    const g = sinCfdi.find((x) => x.id === movId);
-    const { error } = await supabase.from("movimientos").update({ cfdi_uuid: c.uuid, tiene_cfdi: true }).eq("id", movId);
-    if (error) return aviso("No se ligó: " + error.message);
-    await supabase.from("cfdi").update({ estado: "ligada", ...(c.rubro_id || !g?.rubro_id ? {} : { rubro_id: g.rubro_id }) }).eq("uuid", c.uuid);
-    setSinCfdi((prev) => prev.filter((x) => x.id !== movId)); setLigando(null);
-    await refrescar(c.uuid); aviso("Factura ligada al gasto.");
+    const { error } = await supabase.rpc("ligar_cfdi", { p_uuid: c.uuid, p_mov: movId });
+    if (error) return aviso("No se ligó: " + error.message + (/function/i.test(error.message) ? " (corre 28_varias_facturas.sql)" : ""));
+    setLigando(null); await refrescar(c.uuid); aviso("Factura ligada al gasto.");
   };
   const setRubro = async (c: Cfdi, rubro_id: string) => {
     await supabase.from("cfdi").update({ rubro_id: rubro_id || null }).eq("uuid", c.uuid);
@@ -408,10 +405,9 @@ export function Facturacion({ initial, vista = "resumen", filtro }: { initial: F
                   {c.estado !== "ligada" && c.tipo === "recibida" && <><button className="link" type="button" onClick={() => { setCreando(c); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Crear gasto</button> · <button className="link" type="button" onClick={() => setLigando(ligando === c.uuid ? null : c.uuid)}>Ligar a gasto</button> · </>}
                   {ligando === c.uuid && (
                     <div style={{ marginTop: 4, whiteSpace: "normal" }}>
-                      <select autoFocus defaultValue="" onChange={(e) => ligarA(c, e.target.value)} style={{ padding: "3px 5px", fontSize: 12, maxWidth: 360 }}>
-                        <option value="">— elige el gasto ({candidatos(c).length} sin factura) —</option>
-                        {candidatos(c).slice(0, 40).map((g) => <option key={g.id} value={g.id}>{g.fecha} · {g.grupo} › {g.rubro} · {g.cuenta} · {fmt2(g.monto_mxn)}{Math.abs(g.monto_mxn - c.total_mxn) < 1 ? " ✓" : ""}</option>)}
-                      </select> <button className="link" type="button" onClick={() => setLigando(null)}>cancelar</button>
+                      <Buscador items={candidatos(c)} texto={(g) => `${g.fecha} ${g.grupo} ${g.rubro} ${g.descripcion} ${g.cuenta} ${g.monto_mxn.toFixed(2)} ${Math.round(g.monto_mxn)}`} placeholder="buscar gasto: rubro, cuenta, monto, fecha…"
+                        render={(g) => <>{g.fecha} · <b>{g.grupo} › {g.rubro}</b> · {g.cuenta} · {fmt2(g.monto_mxn)}{Math.abs(g.monto_mxn - c.total_mxn) < 1 ? " ✓" : ""}{g.facturas ? <span className="badge" style={{ background: "var(--aho)", marginLeft: 6 }}>ya tiene {g.facturas}</span> : null}</>} onElegir={(g) => ligarA(c, g.id)} />
+                      <button className="link" type="button" onClick={() => setLigando(null)}>cancelar</button>
                     </div>)}
                   {c.estado === "ligada" && <><button className="link" type="button" onClick={() => desligar(c)}>Desligar</button> · </>}
                   {c.estado === "nueva" && <><button className="link" type="button" onClick={() => setEstado(c, "sin_gasto")}>Sin gasto</button> · </>}

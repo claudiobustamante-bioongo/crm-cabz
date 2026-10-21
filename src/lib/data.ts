@@ -10,7 +10,7 @@ function must<T>(r: { data: T | null; error: { message: string } | null }, what:
 
 export async function loadGastos(supabase: SupabaseClient, anio: number): Promise<GastosData> {
   const desde = `${anio}-01-01`, hasta = `${anio}-12-31`;
-  const [rubros, cuentas, libros, pagadores, eventos, movimientos, anios, sinLigar] = await Promise.all([
+  const [rubros, cuentas, libros, pagadores, eventos, movimientos, anios, sinLigar, ligadas] = await Promise.all([
     supabase.from("rubros").select("id,codigo,nombre,padre_id,clasificacion,emoji,activo")
       .eq("naturaleza", "gasto").eq("activo", true).order("orden").order("nombre"),
     supabase.from("cuentas").select("id,nombre,tipo,es_medio_pago").eq("activa", true).order("nombre"),
@@ -23,6 +23,7 @@ export async function loadGastos(supabase: SupabaseClient, anio: number): Promis
       .order("fecha", { ascending: false }).range(0, 9999),
     supabase.from("anios").select("anio").order("anio"),
     supabase.from("v_cfdi").select("uuid,fecha,emisor_nombre,total_mxn,concepto").eq("tipo", "recibida").in("tipo_comprobante", ["I"]).is("movimiento_id", null).gte("fecha", desde).lte("fecha", hasta).order("fecha", { ascending: false }).range(0, 1999),
+    supabase.from("cfdi").select("movimiento_id").not("movimiento_id", "is", null).range(0, 9999),
   ]);
 
   const movs = must<Movimiento[]>(movimientos, "movimientos");
@@ -48,6 +49,7 @@ export async function loadGastos(supabase: SupabaseClient, anio: number): Promis
     movimientos: movs,
     asignaciones,
     cfdisSinLigar: must<Record<string, unknown>[]>(sinLigar, "cfdi").map((c) => ({ ...c, total_mxn: Number(c.total_mxn) })) as unknown as CfdiMini[],
+    facturasPorMov: must<{ movimiento_id: string }[]>(ligadas, "cfdi").reduce<Record<string, number>>((a, r) => { a[r.movimiento_id] = (a[r.movimiento_id] ?? 0) + 1; return a; }, {}),
   };
 }
 
@@ -125,7 +127,7 @@ export async function loadFacturacion(supabase: SupabaseClient, anio: number): P
     supabase.auth.getUser(),
     supabase.from("app_config").select("rfc_propio").maybeSingle(),
     supabase.from("v_cfdi").select("*").gte("fecha", desde).lte("fecha", hasta).order("fecha", { ascending: false }).range(0, 4999),
-    supabase.from("v_movimientos").select("id,fecha,descripcion,grupo,rubro,rubro_id,cuenta,monto_mxn").eq("tipo", "gasto").eq("estado", "real").eq("tiene_cfdi", false)
+    supabase.from("v_movimientos").select("id,fecha,descripcion,grupo,rubro,rubro_id,cuenta,monto_mxn").eq("tipo", "gasto").eq("estado", "real")
       .gte("fecha", desde).lte("fecha", hasta).order("fecha", { ascending: false }).range(0, 9999),
     supabase.from("rubros").select("id,codigo,nombre,padre_id,clasificacion,emoji,activo,deduccion").eq("naturaleza", "gasto").eq("activo", true).order("orden").order("nombre"),
     supabase.from("cuentas").select("id,nombre,tipo,es_medio_pago").eq("activa", true).eq("es_medio_pago", true).order("nombre"),
@@ -146,7 +148,8 @@ export async function loadFacturacion(supabase: SupabaseClient, anio: number): P
     rfcPropio: cfg.data?.rfc_propio ?? null,
     userId: user?.id ?? "",
     cfdis: must<Record<string, unknown>[]>(cfdis, "cfdi").map(num) as unknown as Cfdi[],
-    sinCfdi: must<GastoSinCfdi[]>(sin, "movimientos").map((m) => ({ ...m, monto_mxn: Number(m.monto_mxn) })),
+    sinCfdi: (() => { const n: Record<string, number> = {}; (must<Cfdi[]>(cfdis, "cfdi") as unknown as { movimiento_id: string | null }[]).forEach((c) => { if (c.movimiento_id) n[c.movimiento_id] = (n[c.movimiento_id] ?? 0) + 1; });
+      return must<GastoSinCfdi[]>(sin, "movimientos").map((m) => ({ ...m, monto_mxn: Number(m.monto_mxn), facturas: n[m.id] ?? 0 })); })(),
     rubros: must<Rubro[]>(rubros, "rubros"),
     cuentas: must<Cuenta[]>(cuentas, "cuentas"),
     libros: must<Catalogo[]>(libros, "libros"),
