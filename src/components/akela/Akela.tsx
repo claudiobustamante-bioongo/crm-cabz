@@ -17,7 +17,7 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
   const [plan, setPlan] = useState<PlanAkela[]>(initial.plan);
   const [toast, setToast] = useState("");
   const [busy, setBusy] = useState(false);
-  const [nueva, setNueva] = useState({ linea: "", pagador: "CABZ", monto: "", rubro_id: "", transferencia: false });
+  const [nueva, setNueva] = useState({ linea: "", categoria: "", pagador: "CABZ", monto: "", rubro_id: "", transferencia: false });
   const [pr, setPr] = useState(initial.params);
   const [retiroPct, setRetiroPct] = useState(100);   // % del presupuesto anual que saldría del fondo en la proyección
   const aviso = (t: string) => { setToast(t); setTimeout(() => setToast(""), 4500); };
@@ -84,7 +84,8 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
     const monto = Number(nueva.monto); if (!nueva.linea.trim() || !(monto >= 0)) return aviso("Nombre y monto mensual.");
     setBusy(true);
     for (let m = 1; m <= 12; m++) { const { error } = await supabase.rpc("plan_akela_set", { p_anio: anio, p_linea: nueva.linea.trim(), p_mes: m, p_monto: monto, p_pagador: nueva.pagador, p_transferencia: nueva.transferencia, p_rubro: nueva.rubro_id || null }); if (error) { setBusy(false); return aviso("No se agregó: " + error.message); } }
-    setBusy(false); setNueva({ linea: "", pagador: "CABZ", monto: "", rubro_id: "", transferencia: false }); router.refresh(); window.location.reload();
+    if (nueva.categoria.trim()) await supabase.from("plan_akela").update({ categoria: nueva.categoria.trim() }).eq("anio", anio).eq("linea", nueva.linea.trim());
+    setBusy(false); setNueva({ linea: "", categoria: "", pagador: "CABZ", monto: "", rubro_id: "", transferencia: false }); router.refresh(); window.location.reload();
   };
   const setAttr = async (l: typeof lineas[number], campo: "categoria" | "rubro_id" | "pagador" | "es_transferencia", valor: string | boolean | null) => {
     let patch: Record<string, unknown> = { [campo]: valor === "" ? null : valor };
@@ -210,8 +211,9 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
         </table></div>}
         {realSinLinea.length > 0 && <p className="hint">Real {anio} sin línea en el plan: {realSinLinea.map((r) => `${r.linea} ${fmt(r.real)}`).join(" · ")}. Agrega la línea ligada a ese subrubro para compararla.</p>}
         {!ro && (
-          <div className="g4" style={{ marginTop: 10 }}>
-            <div><label htmlFor="n-linea">Nueva línea</label><input id="n-linea" type="text" value={nueva.linea} onChange={(e) => setNueva({ ...nueva, linea: e.target.value })} placeholder="p. ej. Jardinero" /></div>
+          <div className="g4" style={{ marginTop: 10, gridTemplateColumns: "repeat(5, 1fr)" }}>
+            <div><label htmlFor="n-cat">Categoría (rubro)</label><input id="n-cat" type="text" list="akela-cats-n" value={nueva.categoria} onChange={(e) => setNueva({ ...nueva, categoria: e.target.value })} placeholder="Hogar, Salud, Viajes…" /><datalist id="akela-cats-n">{categorias.map((c) => <option key={c} value={c} />)}</datalist></div>
+            <div><label htmlFor="n-linea">Concepto (línea nueva)</label><input id="n-linea" type="text" value={nueva.linea} onChange={(e) => setNueva({ ...nueva, linea: e.target.value })} placeholder="p. ej. Jardinero" /></div>
             <div><label htmlFor="n-pag">Quién paga</label><select id="n-pag" value={nueva.pagador} onChange={(e) => setNueva({ ...nueva, pagador: e.target.value })}>{initial.pagadores.map((p) => <option key={p.codigo} value={p.codigo}>{p.codigo} · {p.nombre}</option>)}</select></div>
             <div><label htmlFor="n-rub">Subrubro Akela (para comparar con real)</label><select id="n-rub" value={nueva.rubro_id} onChange={(e) => setNueva({ ...nueva, rubro_id: e.target.value })}><option value="">— sin ligar —</option>{initial.rubrosAkela.map((r) => <option key={r.id} value={r.id}>{r.nombre}</option>)}</select></div>
             <div><label htmlFor="n-monto">Mensual</label><div style={{ display: "flex", gap: 6 }}><input id="n-monto" type="number" value={nueva.monto} onChange={(e) => setNueva({ ...nueva, monto: e.target.value })} /><button className="btn sm" type="button" onClick={agregarLinea} disabled={busy}>+</button></div>
