@@ -77,9 +77,10 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
     const { error } = await supabase.from("plan_akela").delete().eq("anio", anio).eq("linea", l.linea);
     if (error) return aviso(error.message); setPlan((p) => p.filter((x) => x.linea !== l.linea));
   };
-  const proponer = async () => {
-    const { data, error } = await supabase.rpc("proponer_plan_akela", { p_de: anio - 1, p_a: anio });
-    if (error) return aviso(error.message); aviso(`${data} celdas propuestas desde el real de ${anio - 1}.`); window.location.reload();
+  const proponer = async (modo: "anual" | "ult3") => {
+    if (!confirm(`Llenar el plan ${anio} con ${modo === "ult3" ? "el promedio de los últimos 3 meses" : "el promedio anual"} de ${anio - 1} (solo celdas vacías)?`)) return;
+    const { data, error } = await supabase.rpc("proponer_plan_akela", { p_de: anio - 1, p_a: anio, p_modo: modo });
+    if (error) return aviso(error.message + (/function/i.test(error.message) ? " (corre 32_plan_akela_2026.sql)" : "")); aviso(`${data} celdas propuestas.`); window.location.reload();
   };
   const guardarParams = async () => {
     const { error } = await supabase.from("app_config").update({ akela_nac_papa: pr.nac_papa, akela_nac_mama: pr.nac_mama, akela_rend_real: pr.rend_real, akela_tc: pr.tc }).not("owner_id", "is", null);
@@ -124,7 +125,7 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
       <h2>1 · Presupuesto {anio} · línea por línea</h2>
       <div className="card full-bleed">
         <div className="ct"><span>Plan vs real</span>
-          {!ro && <button className="btn ghost sm" type="button" onClick={proponer} title={`Llena las celdas vacías con el promedio real de ${anio - 1}`}>Proponer desde real {anio - 1}</button>}</div>
+          {!ro && <span style={{ display: "flex", gap: 6 }}><button className="btn ghost sm" type="button" onClick={() => proponer("anual")} title={`Promedio de los 12 meses de ${anio - 1} (real si hay, si no plan)`}>Proponer: promedio {anio - 1}</button><button className="btn ghost sm" type="button" onClick={() => proponer("ult3")} title={`Promedio de los últimos 3 meses con datos de ${anio - 1}`}>Proponer: últimos 3 meses</button></span>}</div>
         <div className="tbl"><table>
           <thead><tr><th>Línea</th><th>Quién paga</th><th className="n">Mensual</th><th className="n">Plan anual</th><th className="n">Real a la fecha</th><th className="n">Plan a la fecha</th><th style={{ width: 220 }}>Avance</th><th className="n">Desviación</th><th></th></tr></thead>
           <tbody>
