@@ -199,12 +199,13 @@ export function Facturacion({ initial, vista = "resumen", filtro }: { initial: F
 
   /* ---------- exportar detalle (mismas columnas que Panel_Facturas_Maestro) ---------- */
   const COLS: [string, (c: Cfdi) => string | number | null][] = [
-    ["ID", (c) => c.num], ["Tipo", (c) => TIPO_LABEL[c.tipo]], ["Fecha emisión", (c) => c.fecha], ["Folio Fiscal (UUID)", (c) => c.uuid.toUpperCase()], ["Serie", (c) => c.serie], ["Folio", (c) => c.folio],
-    ["Emisor", (c) => c.emisor_nombre], ["RFC emisor", (c) => c.emisor_rfc], ["Receptor", (c) => c.receptor_nombre], ["RFC receptor", (c) => c.receptor_rfc], ["Concepto", (c) => c.concepto],
+    ["Fecha emisión", (c) => c.fecha], ["Tipo", (c) => TIPO_LABEL[c.tipo]], ["Total", (c) => c.total], ["Moneda", (c) => c.moneda], ["Total en MXN", (c) => c.total_mxn],
+    ["Emisor", (c) => c.emisor_nombre], ["Receptor", (c) => c.receptor_nombre],
     ["Categoría contable", (c) => c.rubro ? `${c.grupo} › ${c.rubro}` : c.tipo === "nomina" ? "Sueldo" : c.tipo === "emitida" ? "Comisión" : null], ["Uso CFDI", (c) => c.uso_cfdi],
-    ["Subtotal", (c) => c.subtotal], ["IVA", (c) => c.iva], ["Ret. ISR", (c) => c.ret_isr], ["Ret. IVA", (c) => c.ret_iva], ["Total", (c) => c.total], ["Moneda", (c) => c.moneda], ["Tipo de cambio", (c) => c.tc], ["Total en MXN", (c) => c.total_mxn],
+    ["Subtotal", (c) => c.subtotal], ["IVA", (c) => c.iva], ["Ret. ISR", (c) => c.ret_isr], ["Ret. IVA", (c) => c.ret_iva], ["Tipo de cambio", (c) => c.tc],
     ["Forma de pago", (c) => c.forma_pago ? `${c.forma_pago} ${FORMA_PAGO[c.forma_pago] ?? ""}`.trim() : null], ["Método de pago", (c) => c.metodo_pago], ["Vencimiento", (c) => c.vencimiento],
-    ["Archivo origen", (c) => c.xml_nombre], ["Link Drive", (c) => c.link_drive], ["Confianza", (c) => c.confianza ?? (c.xml_path ? "alta (XML)" : null)], ["Notas", (c) => c.notas],
+    ["Link Drive", (c) => c.link_drive], ["Confianza", (c) => c.confianza ?? (c.xml_path ? "alta (XML)" : null)], ["Notas", (c) => c.notas], ["Archivo origen", (c) => c.xml_nombre],
+    ["RFC emisor", (c) => c.emisor_rfc], ["RFC receptor", (c) => c.receptor_rfc], ["Serie", (c) => c.serie], ["Folio", (c) => c.folio], ["Folio Fiscal (UUID)", (c) => c.uuid.toUpperCase()], ["Concepto", (c) => c.concepto], ["ID", (c) => c.num],
   ];
   const exportar = () => {
     const esc = (v: string | number | null) => { const t = v == null ? "" : String(v); return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
@@ -366,40 +367,23 @@ export function Facturacion({ initial, vista = "resumen", filtro }: { initial: F
         </div>
       )}
 
-      <div className="card">
+      <div className="card full-bleed">
         <div className="ct"><span>Detalle de facturas</span><span className="tag">{lista.length} de {cfdis.length} · <button className="link" type="button" onClick={exportar}>exportar CSV</button></span></div>
         <div className="g3" style={{ marginBottom: 8 }}>
           <div><label htmlFor="f-tipo">Tipo</label><select id="f-tipo" value={ftipo} onChange={(e) => setFtipo(e.target.value)}><option value="">Todas</option><option value="recibida">Recibidas</option><option value="nomina">Nómina</option></select></div>
           <div><label htmlFor="f-mes">Mes</label><select id="f-mes" value={fmes} onChange={(e) => setFmes(e.target.value)}><option value="">Todos</option>{meses.map((k) => <option key={k} value={k}>{ml(k)}</option>)}</select></div>
           <div><label htmlFor="f-est">Estado</label><select id="f-est" value={festado} onChange={(e) => setFestado(e.target.value)}><option value="">Todos</option>{(Object.keys(ESTADO) as Cfdi["estado"][]).map((k) => <option key={k} value={k}>{ESTADO[k][0]}</option>)}</select></div>
         </div>
-        <TablaFija fontSize={12}><table>
-          <thead><tr>{COLS.map((c) => <th key={c[0]} className={["Subtotal", "IVA", "Ret. ISR", "Ret. IVA", "Total", "Total en MXN", "Tipo de cambio"].includes(c[0]) ? "n" : undefined}>{c[0]}</th>)}<th>Estado</th><th>Acciones</th></tr></thead>
+        <TablaFija fontSize={12} fijarUltima={false}><table>
+          <thead><tr>{COLS.slice(0, 7).map((c) => <th key={c[0]} className={["Subtotal", "IVA", "Ret. ISR", "Ret. IVA", "Total", "Total en MXN", "Tipo de cambio"].includes(c[0]) ? "n" : undefined}>{c[0]}</th>)}<th>Estado</th><th>Acciones</th>{COLS.slice(7).map((c) => <th key={c[0]} className={["Subtotal", "IVA", "Ret. ISR", "Ret. IVA", "Tipo de cambio"].includes(c[0]) ? "n" : undefined}>{c[0]}</th>)}</tr></thead>
           <tbody>
             {lista.map((c) => (
               <tr key={c.uuid}>
-                <td>{c.num}</td>
-                <td><span className="badge" style={{ background: TIPO_COLOR[c.tipo] }}>{TIPO_LABEL[c.tipo]}</span></td>
                 <td>{c.fecha}</td>
-                <td style={{ fontFamily: "monospace", fontSize: 11 }} title={c.uuid}>{c.uuid.slice(0, 8).toUpperCase()}…</td>
-                <td>{c.serie}</td><td>{c.folio}</td>
-                <td style={{ whiteSpace: "normal", maxWidth: 180 }}>{c.emisor_nombre}</td><td>{c.emisor_rfc}</td>
-                <td style={{ whiteSpace: "normal", maxWidth: 160 }}>{c.receptor_nombre}</td><td>{c.receptor_rfc}</td>
-                <td style={{ whiteSpace: "normal", maxWidth: 220 }}>{c.concepto}</td>
-                <td>{c.tipo === "recibida" ? (
-                  <select value={c.rubro_id ?? ""} onChange={(e) => setRubro(c, e.target.value)} style={{ padding: "3px 5px", fontSize: 12, width: 170 }}>
-                    <option value="">— rubro —</option>
-                    {grupos.map((g) => <optgroup key={g.id} label={g.nombre}>{subsDe(g.id).map((r) => <option key={r.id} value={r.id}>{r.nombre}</option>)}</optgroup>)}
-                  </select>) : c.tipo === "nomina" ? "Sueldo" : "Comisión"}</td>
-                <td>{c.uso_cfdi}</td>
-                <td className="n">{fmt2(c.subtotal)}</td><td className="n">{fmt2(c.iva)}</td><td className="n">{fmt2(c.ret_isr)}</td><td className="n">{fmt2(c.ret_iva)}</td>
-                <td className="n" style={{ fontWeight: 700, color: "var(--ink)" }}>{fmt2(c.total)}</td><td>{c.moneda}</td><td className="n">{c.tc ?? ""}</td><td className="n">{fmt2(c.total_mxn)}</td>
-                <td>{c.forma_pago ? FORMA_PAGO[c.forma_pago] ?? c.forma_pago : ""}</td><td>{c.metodo_pago}</td>
-                <td><input type="date" defaultValue={c.vencimiento ?? ""} onBlur={(e) => e.target.value !== (c.vencimiento ?? "") && editar(c, "vencimiento", e.target.value)} style={{ padding: "3px 5px", fontSize: 12, width: 130 }} /></td>
-                <td style={{ whiteSpace: "normal", maxWidth: 160, fontSize: 11 }}>{c.xml_nombre}{c.pdf_nombre ? ` · ${c.pdf_nombre}` : ""}</td>
-                <td><input type="url" defaultValue={c.link_drive ?? ""} placeholder="https://drive…" onBlur={(e) => e.target.value !== (c.link_drive ?? "") && editar(c, "link_drive", e.target.value)} style={{ padding: "3px 5px", fontSize: 12, width: 120 }} /></td>
-                <td>{c.confianza ?? (c.xml_path ? "alta (XML)" : "")}</td>
-                <td><input type="text" defaultValue={c.notas ?? ""} onBlur={(e) => e.target.value !== (c.notas ?? "") && editar(c, "notas", e.target.value)} style={{ padding: "3px 5px", fontSize: 12, width: 140 }} /></td>
+                <td><span className="badge" style={{ background: TIPO_COLOR[c.tipo] }}>{TIPO_LABEL[c.tipo]}</span></td>
+                <td className="n" style={{ fontWeight: 700, color: "var(--ink)" }}>{fmt2(c.total)}</td><td>{c.moneda}</td><td className="n">{fmt2(c.total_mxn)}</td>
+                <td style={{ whiteSpace: "normal", maxWidth: 200, fontWeight: 600, color: "var(--ink)" }}>{c.emisor_nombre}</td>
+                <td style={{ whiteSpace: "normal", maxWidth: 160 }}>{c.receptor_nombre}</td>
                 <td><span className="badge" style={{ background: ESTADO[c.estado][1] }}>{ESTADO[c.estado][0]}</span>{c.movimiento && <div style={{ fontSize: 11, color: "var(--gray-soft)", whiteSpace: "normal" }}>{c.movimiento} · {c.cuenta}</div>}</td>
                 <td style={{ whiteSpace: "nowrap" }}>
                   {c.estado !== "ligada" && c.tipo === "recibida" && <><button className="link" type="button" onClick={() => { setCreando(c); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Crear gasto</button> · <button className="link" type="button" onClick={() => setLigando(ligando === c.uuid ? null : c.uuid)}>Ligar a gasto</button> · </>}
@@ -414,6 +398,23 @@ export function Facturacion({ initial, vista = "resumen", filtro }: { initial: F
                   <button className="link" type="button" onClick={() => abrir(c.xml_path)}>XML</button>{c.pdf_path && <> · <button className="link" type="button" onClick={() => abrir(c.pdf_path)}>PDF</button></>} · <button className="link" type="button" title={c.link_drive ? "Abrir en Drive" : "Buscar en Drive por UUID"} onClick={() => drive(c)}>{c.link_drive ? "Drive ↗" : "Drive ?"}</button>
                   {" "}<button className="del" type="button" aria-label="Borrar" onClick={() => borrar(c)}>✕</button>
                 </td>
+                <td>{c.tipo === "recibida" ? (
+                  <select value={c.rubro_id ?? ""} onChange={(e) => setRubro(c, e.target.value)} style={{ padding: "3px 5px", fontSize: 12, width: 170 }}>
+                    <option value="">— rubro —</option>
+                    {grupos.map((g) => <optgroup key={g.id} label={g.nombre}>{subsDe(g.id).map((r) => <option key={r.id} value={r.id}>{r.nombre}</option>)}</optgroup>)}
+                  </select>) : c.tipo === "nomina" ? "Sueldo" : "Comisión"}</td>
+                <td>{c.uso_cfdi}</td>
+                <td className="n">{fmt2(c.subtotal)}</td><td className="n">{fmt2(c.iva)}</td><td className="n">{fmt2(c.ret_isr)}</td><td className="n">{fmt2(c.ret_iva)}</td><td className="n">{c.tc ?? ""}</td>
+                <td>{c.forma_pago ? FORMA_PAGO[c.forma_pago] ?? c.forma_pago : ""}</td><td>{c.metodo_pago}</td>
+                <td><input type="date" defaultValue={c.vencimiento ?? ""} onBlur={(e) => e.target.value !== (c.vencimiento ?? "") && editar(c, "vencimiento", e.target.value)} style={{ padding: "3px 5px", fontSize: 12, width: 130 }} /></td>
+                <td><input type="url" defaultValue={c.link_drive ?? ""} placeholder="https://drive…" onBlur={(e) => e.target.value !== (c.link_drive ?? "") && editar(c, "link_drive", e.target.value)} style={{ padding: "3px 5px", fontSize: 12, width: 120 }} /></td>
+                <td>{c.confianza ?? (c.xml_path ? "alta (XML)" : "")}</td>
+                <td><input type="text" defaultValue={c.notas ?? ""} onBlur={(e) => e.target.value !== (c.notas ?? "") && editar(c, "notas", e.target.value)} style={{ padding: "3px 5px", fontSize: 12, width: 140 }} /></td>
+                <td style={{ whiteSpace: "normal", maxWidth: 160, fontSize: 11 }}>{c.xml_nombre}{c.pdf_nombre ? ` · ${c.pdf_nombre}` : ""}</td>
+                <td>{c.emisor_rfc}</td><td>{c.receptor_rfc}</td><td>{c.serie}</td><td>{c.folio}</td>
+                <td style={{ fontFamily: "monospace", fontSize: 11 }} title={c.uuid}>{c.uuid.toUpperCase()}</td>
+                <td style={{ whiteSpace: "normal", maxWidth: 260 }}>{c.concepto}</td>
+                <td>{c.num}</td>
               </tr>
             ))}
             {!lista.length && <tr><td colSpan={30} className="hint">Sin facturas{cfdis.length ? " con esos filtros" : " en " + initial.anio}.</td></tr>}
