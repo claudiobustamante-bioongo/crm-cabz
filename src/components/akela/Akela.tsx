@@ -33,7 +33,8 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
   const realDe = (l: { linea: string; rubro_id: string | null }, mes: number) => initial.realPlan.filter((r) => r.mes === mes && ((l.rubro_id && r.rubro_id === l.rubro_id) || r.linea === l.linea)).reduce((a, r) => a + Number(r.real), 0);
   const realLinea = (l: { linea: string; rubro_id: string | null }) => Array.from({ length: 12 }, (_, i) => realDe(l, i + 1));
   const [abierta, setAbierta] = useState<string | null>(null);   // línea con la cuadrícula mensual abierta
-  const [vista, setVista] = useState<"resumen" | "cuadricula">("resumen");
+  const [vista, setVista] = useState<"resumen" | "cuadricula" | "rubros">("resumen");
+  const [rubroAbierto, setRubroAbierto] = useState<string | null>(null);
   const [verReal, setVerReal] = useState(true);
   const [agrupar, setAgrupar] = useState<"quien" | "categoria">("quien");
   const categorias = useMemo(() => [...new Set(lineas.map((l) => l.categoria).filter((c): c is string => !!c))].sort((a, b) => a.localeCompare(b, "es")), [lineas]);
@@ -164,8 +165,38 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
           <div className="stat"><div className="v">{fmt(totLM)}</div><div className="l">Luis Miguel → directo al fondo{totRetLM ? ` · neto ${fmt(netoLM)}` : ""}</div></div>
         </div>
         <div className="ct"><span>Plan vs real</span>
-          <span className="pills" style={{ margin: 0 }}><button type="button" className="pill" aria-pressed={vista === "resumen"} onClick={() => setVista("resumen")}>Resumen</button><button type="button" className="pill" aria-pressed={vista === "cuadricula"} onClick={() => setVista("cuadricula")}>Cuadrícula 12 meses</button><span style={{ margin: "0 6px", opacity: .5 }}>|</span><button type="button" className="pill" aria-pressed={agrupar === "quien"} onClick={() => setAgrupar("quien")}>por quién paga</button><button type="button" className="pill" aria-pressed={agrupar === "categoria"} onClick={() => setAgrupar("categoria")}>por categoría</button>{vista === "cuadricula" && <label style={{ display: "inline-flex", gap: 4, alignItems: "center", margin: "0 0 0 8px", fontSize: 12 }}><input type="checkbox" checked={verReal} onChange={(e) => setVerReal(e.target.checked)} /> ver real</label>}</span>
+          <span className="pills" style={{ margin: 0 }}><button type="button" className="pill" aria-pressed={vista === "resumen"} onClick={() => setVista("resumen")}>Resumen</button><button type="button" className="pill" aria-pressed={vista === "cuadricula"} onClick={() => setVista("cuadricula")}>Cuadrícula 12 meses</button><button type="button" className="pill" aria-pressed={vista === "rubros"} onClick={() => setVista("rubros")}>Por rubro</button><span style={{ margin: "0 6px", opacity: .5 }}>|</span><button type="button" className="pill" aria-pressed={agrupar === "quien"} onClick={() => setAgrupar("quien")}>por quién paga</button><button type="button" className="pill" aria-pressed={agrupar === "categoria"} onClick={() => setAgrupar("categoria")}>por categoría</button>{vista === "cuadricula" && <label style={{ display: "inline-flex", gap: 4, alignItems: "center", margin: "0 0 0 8px", fontSize: 12 }}><input type="checkbox" checked={verReal} onChange={(e) => setVerReal(e.target.checked)} /> ver real</label>}</span>
           {!ro && <span style={{ display: "flex", gap: 6 }}><button className="btn ghost sm" type="button" onClick={() => proponer("anual")} title={`Promedio de los 12 meses de ${anio - 1} (real si hay, si no plan)`}>Proponer: promedio {anio - 1}</button><button className="btn ghost sm" type="button" onClick={() => proponer("ult3")} title={`Promedio de los últimos 3 meses con datos de ${anio - 1}`}>Proponer: últimos 3 meses</button></span>}</div>
+        {vista === "rubros" && (() => {
+          const cats = [...categorias, ...(lineas.some((l) => !l.categoria) ? ["Sin categoría"] : [])]
+            .map((c) => { const ls = lineas.filter((l) => (l.categoria ?? "Sin categoría") === c && !l.transferencia); return { c, ls, plan: sum(ls.flatMap((l) => l.meses)), pf: sum(ls.flatMap((l) => l.meses.slice(0, mesActual))), real: sum(ls.flatMap((l) => realLinea(l))) }; })
+            .filter((x) => x.plan || x.real).sort((a, b) => b.plan - a.plan);
+          const max = Math.max(1, ...cats.map((x) => Math.max(x.plan, x.real)));
+          const Barra = ({ plan, real, pf, w }: { plan: number; real: number; pf: number; w: number }) => (
+            <div style={{ position: "relative", height: 14, border: "1px solid var(--ink)", borderRadius: 7, background: "var(--cream)", overflow: "hidden" }} title={`plan ${fmt(plan)} · a la fecha ${fmt(pf)} · real ${fmt(real)}`}>
+              <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${(plan / w) * 100}%`, background: "var(--gray-soft)" }} />
+              <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${(real / w) * 100}%`, background: real > pf && pf ? "var(--neg)" : "var(--akela)" }} />
+              {pf > 0 && <div style={{ position: "absolute", left: `${(pf / w) * 100}%`, top: 0, bottom: 0, borderLeft: "2px dashed var(--ink)" }} />}
+            </div>);
+          return (
+            <div style={{ display: "grid", gap: 8 }}>
+              <p className="hint" style={{ margin: 0 }}>Barra gris = plan anual · barra color = real registrado en el CRM · línea punteada = plan a la fecha. Clic en un rubro para ver sus líneas (transferencias excluidas).</p>
+              {cats.map((x) => (
+                <div key={x.c} style={{ border: "1.5px solid var(--ink)", borderRadius: 10, padding: "8px 12px", background: rubroAbierto === x.c ? "var(--bone)" : "var(--paper)" }}>
+                  <button type="button" className="link" style={{ display: "block", width: "100%", textAlign: "left" }} onClick={() => setRubroAbierto(rubroAbierto === x.c ? null : x.c)}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}><b>{rubroAbierto === x.c ? "▾" : "▸"} {x.c}</b><span>plan {fmt(x.plan)} · real {fmt(x.real)} · {pct(x.real, x.pf)} del plan a la fecha</span></div>
+                    <Barra plan={x.plan} real={x.real} pf={x.pf} w={max} />
+                  </button>
+                  {rubroAbierto === x.c && (
+                    <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
+                      {x.ls.sort((a, b) => sum(b.meses) - sum(a.meses)).map((l) => { const re = realLinea(l); const tp = sum(l.meses), tr = sum(re), tpf = sum(l.meses.slice(0, mesActual)); return (
+                        <div key={l.linea} style={{ paddingLeft: 16 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}><span>{l.linea} <span className="hint">{l.pagador}{nombreRubro(l.rubro_id) ? ` › ${nombreRubro(l.rubro_id)}` : " · sin subrubro (no liga real)"}</span></span><span>plan {fmt(tp)} · real {fmt(tr)}{tpf ? <span className={tr - tpf > 0 ? "neg" : "pos"}> · {tr - tpf > 0 ? "+" : ""}{fmt(tr - tpf)}</span> : null}</span></div>
+                          <Barra plan={tp} real={tr} pf={tpf} w={Math.max(1, ...x.ls.map((y) => Math.max(sum(y.meses), sum(realLinea(y)))))} />
+                        </div>); })}
+                    </div>)}
+                </div>))}
+            </div>); })()}
         {vista === "cuadricula" && (
           <TablaFija grupo="akela-grid" alto="70vh"><table style={{ fontSize: 12 }}>
             <thead><tr><th>Línea</th><th>Quién</th>{MESN.map((m, i) => <th key={m} className="n" style={i + 1 === mesActual ? { textDecoration: "underline" } : undefined}>{m}</th>)}<th className="n">Año</th></tr></thead>
