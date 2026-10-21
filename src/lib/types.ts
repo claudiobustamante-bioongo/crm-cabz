@@ -233,5 +233,6 @@ export interface AkelaData {
   tcHoy: number;
   params: { nac_papa: number; nac_mama: number; rend_real: number; tc: number };
   rubrosAkela: { id: string; nombre: string }[];
+  rubros: { id: string; nombre: string; padre_id: string | null }[];   // árbol completo de rubros de gasto
   pagadores: Catalogo[];
 }

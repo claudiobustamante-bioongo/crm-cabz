@@ -37,6 +37,18 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
   const [verReal, setVerReal] = useState(true);
   const [agrupar, setAgrupar] = useState<"quien" | "categoria">("quien");
   const categorias = useMemo(() => [...new Set(lineas.map((l) => l.categoria).filter((c): c is string => !!c))].sort((a, b) => a.localeCompare(b, "es")), [lineas]);
+  const padres = useMemo(() => initial.rubros.filter((r) => !r.padre_id).map((r) => r.nombre).sort((a, b) => a.localeCompare(b, "es")), [initial.rubros]);
+  const opcionesCat = useMemo(() => [...new Set([...padres, ...categorias])].sort((a, b) => a.localeCompare(b, "es")), [padres, categorias]);
+  /* subrubros disponibles para una categoría: hijos de ese rubro padre + los subrubros Akela */
+  const SubrubroSelect = ({ cat, value, onChange, id }: { cat: string | null; value: string; onChange: (v: string) => void; id?: string }) => {
+    const padre = initial.rubros.find((r) => !r.padre_id && r.nombre === cat);
+    const hijos = padre ? initial.rubros.filter((r) => r.padre_id === padre.id).sort((a, b) => a.nombre.localeCompare(b.nombre, "es")) : [];
+    const akela = initial.rubrosAkela.filter((r) => !hijos.some((h) => h.id === r.id));
+    return <select id={id} value={value} onChange={(e) => onChange(e.target.value)}><option value="">— sin ligar —</option>
+      {hijos.length > 0 && <optgroup label={cat ?? ""}>{hijos.map((r) => <option key={r.id} value={r.id}>{r.nombre}</option>)}</optgroup>}
+      <optgroup label="Akela">{akela.map((r) => <option key={r.id} value={r.id}>{r.nombre}</option>)}</optgroup></select>;
+  };
+  const nombreRubro = (id: string | null) => initial.rubros.find((r) => r.id === id)?.nombre ?? null;
   const grupoDe = (l: { pagador: string; categoria: string | null }) => agrupar === "quien" ? l.pagador : (l.categoria ?? "Sin categoría");
   const grupos = agrupar === "quien" ? ORDEN.filter((q) => lineas.some((l) => l.pagador === q)) : [...categorias, ...(lineas.some((l) => !l.categoria) ? ["Sin categoría"] : [])];
   const tituloGrupo = (g: string) => agrupar === "quien" ? (QUIEN[g] ?? g) : g;
@@ -146,6 +158,11 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
 
       <h2>1 · Presupuesto {anio} · línea por línea</h2>
       <div className="card full-bleed">
+        <div className="stat-row">
+          {ORDEN.filter((q) => q !== "HAMB").map((q) => { const ls = lineas.filter((l) => l.pagador === q); const pl = sum(ls.flatMap((l) => l.meses)), pf = sum(ls.flatMap((l) => l.meses.slice(0, mesActual))), re = sum(ls.flatMap((l) => realLinea(l))); const tr = sum(ls.filter((l) => l.transferencia).flatMap((l) => l.meses)); return (
+            <div key={q} className="stat"><div className="v">{fmt(pl)}</div><div className="l">{q === "CABZ" ? "Pago yo" : q === "CABU" ? "Paga papá" : "Paga mamá"} · real {fmt(re)} / plan a la fecha {fmt(pf)}{tr ? ` · incl. ${fmt(tr)} transf.` : ""}</div></div>); })}
+          <div className="stat"><div className="v">{fmt(totLM)}</div><div className="l">Luis Miguel → directo al fondo{totRetLM ? ` · neto ${fmt(netoLM)}` : ""}</div></div>
+        </div>
         <div className="ct"><span>Plan vs real</span>
           <span className="pills" style={{ margin: 0 }}><button type="button" className="pill" aria-pressed={vista === "resumen"} onClick={() => setVista("resumen")}>Resumen</button><button type="button" className="pill" aria-pressed={vista === "cuadricula"} onClick={() => setVista("cuadricula")}>Cuadrícula 12 meses</button><span style={{ margin: "0 6px", opacity: .5 }}>|</span><button type="button" className="pill" aria-pressed={agrupar === "quien"} onClick={() => setAgrupar("quien")}>por quién paga</button><button type="button" className="pill" aria-pressed={agrupar === "categoria"} onClick={() => setAgrupar("categoria")}>por categoría</button>{vista === "cuadricula" && <label style={{ display: "inline-flex", gap: 4, alignItems: "center", margin: "0 0 0 8px", fontSize: 12 }}><input type="checkbox" checked={verReal} onChange={(e) => setVerReal(e.target.checked)} /> ver real</label>}</span>
           {!ro && <span style={{ display: "flex", gap: 6 }}><button className="btn ghost sm" type="button" onClick={() => proponer("anual")} title={`Promedio de los 12 meses de ${anio - 1} (real si hay, si no plan)`}>Proponer: promedio {anio - 1}</button><button className="btn ghost sm" type="button" onClick={() => proponer("ult3")} title={`Promedio de los últimos 3 meses con datos de ${anio - 1}`}>Proponer: últimos 3 meses</button></span>}</div>
@@ -177,7 +194,7 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
                 {lineas.filter((l) => grupoDe(l) === q).map((l) => { const re = realLinea(l); const tp = sum(l.meses), tr = sum(re), tpf = sum(l.meses.slice(0, mesActual)); const uniforme = l.meses.every((v) => v === l.meses[0]); const av = tp ? Math.min(100, (tr / tp) * 100) : 0; const avf = tp ? Math.min(100, (tpf / tp) * 100) : 0; const des = tr - tpf; return (
                   <Fragment key={l.linea}>
                     <tr>
-                      <td style={{ fontWeight: 600, color: "var(--ink)" }}>{l.linea}{l.categoria && agrupar === "quien" ? <span className="badge" style={{ marginLeft: 6 }}>{l.categoria}</span> : null}{l.transferencia ? <span className="badge" style={{ background: "var(--nec)", marginLeft: 6 }}>transferencia</span> : null}{!l.rubro_id && <span className="hint" title="sin subrubro ligado: no se compara con real"> ·</span>}</td>
+                      <td style={{ fontWeight: 600, color: "var(--ink)" }}>{l.linea}{l.categoria && agrupar === "quien" ? <span className="badge" style={{ marginLeft: 6 }}>{l.categoria}</span> : null}{nombreRubro(l.rubro_id) && nombreRubro(l.rubro_id) !== l.linea ? <span className="hint" style={{ marginLeft: 6, fontSize: 11 }}>› {nombreRubro(l.rubro_id)}</span> : null}{l.transferencia ? <span className="badge" style={{ background: "var(--nec)", marginLeft: 6 }}>transferencia</span> : null}{!l.rubro_id && <span className="hint" title="sin subrubro ligado: no se compara con real"> ·</span>}</td>
                       <td>{l.pagador}</td>
                       <td className="n">{ro ? (uniforme ? fmt(l.meses[0]) : "varía") : <input type="number" defaultValue={uniforme ? l.meses[0] || "" : ""} placeholder={uniforme ? "" : "varía"} onBlur={(e) => { const v = Number(e.target.value); if (e.target.value !== "" && (!uniforme || v !== l.meses[0])) setFila(l, v); }} style={inp} title="Se aplica a los 12 meses" />}</td>
                       <td className="n" style={{ fontWeight: 700 }}>{fmt(tp)}</td>
@@ -190,8 +207,8 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
                     {abierta === l.linea && (
                       <tr><td colSpan={9} style={{ background: "var(--bone)", padding: "6px 10px" }}>
                         {!ro && <div className="g4" style={{ marginBottom: 6 }}>
-                          <div><label>Categoría</label><input type="text" list="akela-cats" defaultValue={l.categoria ?? ""} onBlur={(e) => e.target.value.trim() !== (l.categoria ?? "") && setAttr(l, "categoria", e.target.value.trim())} placeholder="Hogar, Salud, Viajes…" /><datalist id="akela-cats">{categorias.map((c) => <option key={c} value={c} />)}</datalist></div>
-                          <div><label>Subrubro Akela (liga el real)</label><select value={l.rubro_id ?? ""} onChange={(e) => setAttr(l, "rubro_id", e.target.value)}><option value="">— sin ligar —</option>{initial.rubrosAkela.map((r) => <option key={r.id} value={r.id}>{r.nombre}</option>)}</select></div>
+                          <div><label>Rubro (categoría)</label><input type="text" list="akela-cats" defaultValue={l.categoria ?? ""} onBlur={(e) => e.target.value.trim() !== (l.categoria ?? "") && setAttr(l, "categoria", e.target.value.trim())} placeholder="Salud, Hogar, Viajes…" /><datalist id="akela-cats">{opcionesCat.map((c) => <option key={c} value={c} />)}</datalist></div>
+                          <div><label>Subrubro (liga el real)</label><SubrubroSelect cat={l.categoria} value={l.rubro_id ?? ""} onChange={(v) => setAttr(l, "rubro_id", v)} /></div>
                           <div><label>Quién paga</label><select value={l.pagador} onChange={(e) => setAttr(l, "pagador", e.target.value)}>{initial.pagadores.map((p) => <option key={p.codigo} value={p.codigo}>{p.codigo} · {p.nombre}</option>)}</select></div>
                           <div><label>Transferencia (no suma como gasto)</label><input type="checkbox" checked={l.transferencia} onChange={(e) => setAttr(l, "es_transferencia", e.target.checked)} /></div>
                         </div>}
@@ -212,10 +229,10 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
         {realSinLinea.length > 0 && <p className="hint">Real {anio} sin línea en el plan: {realSinLinea.map((r) => `${r.linea} ${fmt(r.real)}`).join(" · ")}. Agrega la línea ligada a ese subrubro para compararla.</p>}
         {!ro && (
           <div className="g4" style={{ marginTop: 10, gridTemplateColumns: "repeat(5, 1fr)" }}>
-            <div><label htmlFor="n-cat">Categoría (rubro)</label><input id="n-cat" type="text" list="akela-cats-n" value={nueva.categoria} onChange={(e) => setNueva({ ...nueva, categoria: e.target.value })} placeholder="Hogar, Salud, Viajes…" /><datalist id="akela-cats-n">{categorias.map((c) => <option key={c} value={c} />)}</datalist></div>
+            <div><label htmlFor="n-cat">Rubro (categoría)</label><input id="n-cat" type="text" list="akela-cats-n" value={nueva.categoria} onChange={(e) => setNueva({ ...nueva, categoria: e.target.value, rubro_id: "" })} placeholder="Salud, Hogar, Viajes…" /><datalist id="akela-cats-n">{opcionesCat.map((c) => <option key={c} value={c} />)}</datalist></div>
             <div><label htmlFor="n-linea">Concepto (línea nueva)</label><input id="n-linea" type="text" value={nueva.linea} onChange={(e) => setNueva({ ...nueva, linea: e.target.value })} placeholder="p. ej. Jardinero" /></div>
             <div><label htmlFor="n-pag">Quién paga</label><select id="n-pag" value={nueva.pagador} onChange={(e) => setNueva({ ...nueva, pagador: e.target.value })}>{initial.pagadores.map((p) => <option key={p.codigo} value={p.codigo}>{p.codigo} · {p.nombre}</option>)}</select></div>
-            <div><label htmlFor="n-rub">Subrubro Akela (para comparar con real)</label><select id="n-rub" value={nueva.rubro_id} onChange={(e) => setNueva({ ...nueva, rubro_id: e.target.value })}><option value="">— sin ligar —</option>{initial.rubrosAkela.map((r) => <option key={r.id} value={r.id}>{r.nombre}</option>)}</select></div>
+            <div><label htmlFor="n-rub">Subrubro (p. ej. Farmacia, Estudios)</label><SubrubroSelect id="n-rub" cat={nueva.categoria || null} value={nueva.rubro_id} onChange={(v) => setNueva({ ...nueva, rubro_id: v })} /></div>
             <div><label htmlFor="n-monto">Mensual</label><div style={{ display: "flex", gap: 6 }}><input id="n-monto" type="number" value={nueva.monto} onChange={(e) => setNueva({ ...nueva, monto: e.target.value })} /><button className="btn sm" type="button" onClick={agregarLinea} disabled={busy}>+</button></div>
               <label style={{ fontSize: 11, display: "flex", gap: 4, alignItems: "center", marginTop: 4 }}><input type="checkbox" checked={nueva.transferencia} onChange={(e) => setNueva({ ...nueva, transferencia: e.target.checked })} /> es transferencia a papá/mamá</label></div>
           </div>)}

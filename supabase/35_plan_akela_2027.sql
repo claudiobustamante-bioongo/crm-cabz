@@ -5,7 +5,7 @@ alter table plan_akela add column if not exists categoria text;
 delete from plan_akela where user_id = crm_owner() and anio = 2027;
 insert into plan_akela (anio, linea, pagador_id, es_transferencia, categoria, rubro_id, mes, monto)
 select 2027, v.linea, (select id from pagadores where user_id = crm_owner() and codigo = v.pag), v.tr, v.cat,
-       case when v.sub is null then null else (select r.id from rubros r join rubros p on p.id = r.padre_id where r.user_id = crm_owner() and p.nombre = 'Akela' and r.nombre = v.sub limit 1) end,
+       case when v.sub is null then null else (select r.id from rubros r join rubros p on p.id = r.padre_id where r.user_id = crm_owner() and p.nombre = coalesce(split_part(nullif(v.sub, split_part(v.sub, '>', 1)), '>', 1), 'Akela') and r.nombre = split_part(v.sub, '>', -1) limit 1) end,
        v.mes, v.monto
 from (values
   ('Pago CABU', 'CABU', true, 'Akela', null, 1, 10000),
@@ -80,18 +80,18 @@ from (values
   ('Estudios Médicos', 'CABZ', false, 'Salud', 'Salud papás', 10, 4167),
   ('Estudios Médicos', 'CABZ', false, 'Salud', 'Salud papás', 11, 4167),
   ('Estudios Médicos', 'CABZ', false, 'Salud', 'Salud papás', 12, 4167),
-  ('Farmacia', 'CABZ', false, 'Salud', null, 1, 0),
-  ('Farmacia', 'CABZ', false, 'Salud', null, 2, 0),
-  ('Farmacia', 'CABZ', false, 'Salud', null, 3, 0),
-  ('Farmacia', 'CABZ', false, 'Salud', null, 4, 0),
-  ('Farmacia', 'CABZ', false, 'Salud', null, 5, 0),
-  ('Farmacia', 'CABZ', false, 'Salud', null, 6, 0),
-  ('Farmacia', 'CABZ', false, 'Salud', null, 7, 0),
-  ('Farmacia', 'CABZ', false, 'Salud', null, 8, 0),
-  ('Farmacia', 'CABZ', false, 'Salud', null, 9, 0),
-  ('Farmacia', 'CABZ', false, 'Salud', null, 10, 0),
-  ('Farmacia', 'CABZ', false, 'Salud', null, 11, 0),
-  ('Farmacia', 'CABZ', false, 'Salud', null, 12, 0),
+  ('Farmacia', 'CABZ', false, 'Salud', 'Salud>Farmacia', 1, 0),
+  ('Farmacia', 'CABZ', false, 'Salud', 'Salud>Farmacia', 2, 0),
+  ('Farmacia', 'CABZ', false, 'Salud', 'Salud>Farmacia', 3, 0),
+  ('Farmacia', 'CABZ', false, 'Salud', 'Salud>Farmacia', 4, 0),
+  ('Farmacia', 'CABZ', false, 'Salud', 'Salud>Farmacia', 5, 0),
+  ('Farmacia', 'CABZ', false, 'Salud', 'Salud>Farmacia', 6, 0),
+  ('Farmacia', 'CABZ', false, 'Salud', 'Salud>Farmacia', 7, 0),
+  ('Farmacia', 'CABZ', false, 'Salud', 'Salud>Farmacia', 8, 0),
+  ('Farmacia', 'CABZ', false, 'Salud', 'Salud>Farmacia', 9, 0),
+  ('Farmacia', 'CABZ', false, 'Salud', 'Salud>Farmacia', 10, 0),
+  ('Farmacia', 'CABZ', false, 'Salud', 'Salud>Farmacia', 11, 0),
+  ('Farmacia', 'CABZ', false, 'Salud', 'Salud>Farmacia', 12, 0),
   ('Vacaciones', 'CABZ', false, 'Viajes', 'Vacaciones', 1, 16667),
   ('Vacaciones', 'CABZ', false, 'Viajes', 'Vacaciones', 2, 16667),
   ('Vacaciones', 'CABZ', false, 'Viajes', 'Vacaciones', 3, 16667),
@@ -128,18 +128,18 @@ from (values
   ('Viaje Huatulco', 'CABZ', false, 'Viajes', 'Viajes México - Huatulco', 10, 0),
   ('Viaje Huatulco', 'CABZ', false, 'Viajes', 'Viajes México - Huatulco', 11, 0),
   ('Viaje Huatulco', 'CABZ', false, 'Viajes', 'Viajes México - Huatulco', 12, 0),
-  ('Restaurantes', 'CABZ', false, 'Restaurantes / Delivery', null, 1, 15000),
-  ('Restaurantes', 'CABZ', false, 'Restaurantes / Delivery', null, 2, 0),
-  ('Restaurantes', 'CABZ', false, 'Restaurantes / Delivery', null, 3, 0),
-  ('Restaurantes', 'CABZ', false, 'Restaurantes / Delivery', null, 4, 0),
-  ('Restaurantes', 'CABZ', false, 'Restaurantes / Delivery', null, 5, 0),
-  ('Restaurantes', 'CABZ', false, 'Restaurantes / Delivery', null, 6, 0),
-  ('Restaurantes', 'CABZ', false, 'Restaurantes / Delivery', null, 7, 0),
-  ('Restaurantes', 'CABZ', false, 'Restaurantes / Delivery', null, 8, 0),
-  ('Restaurantes', 'CABZ', false, 'Restaurantes / Delivery', null, 9, 0),
-  ('Restaurantes', 'CABZ', false, 'Restaurantes / Delivery', null, 10, 0),
-  ('Restaurantes', 'CABZ', false, 'Restaurantes / Delivery', null, 11, 0),
-  ('Restaurantes', 'CABZ', false, 'Restaurantes / Delivery', null, 12, 0),
+  ('Restaurantes', 'CABZ', false, 'Restaurantes / Delivery', 'Restaurantes / Delivery>Restaurantes', 1, 15000),
+  ('Restaurantes', 'CABZ', false, 'Restaurantes / Delivery', 'Restaurantes / Delivery>Restaurantes', 2, 0),
+  ('Restaurantes', 'CABZ', false, 'Restaurantes / Delivery', 'Restaurantes / Delivery>Restaurantes', 3, 0),
+  ('Restaurantes', 'CABZ', false, 'Restaurantes / Delivery', 'Restaurantes / Delivery>Restaurantes', 4, 0),
+  ('Restaurantes', 'CABZ', false, 'Restaurantes / Delivery', 'Restaurantes / Delivery>Restaurantes', 5, 0),
+  ('Restaurantes', 'CABZ', false, 'Restaurantes / Delivery', 'Restaurantes / Delivery>Restaurantes', 6, 0),
+  ('Restaurantes', 'CABZ', false, 'Restaurantes / Delivery', 'Restaurantes / Delivery>Restaurantes', 7, 0),
+  ('Restaurantes', 'CABZ', false, 'Restaurantes / Delivery', 'Restaurantes / Delivery>Restaurantes', 8, 0),
+  ('Restaurantes', 'CABZ', false, 'Restaurantes / Delivery', 'Restaurantes / Delivery>Restaurantes', 9, 0),
+  ('Restaurantes', 'CABZ', false, 'Restaurantes / Delivery', 'Restaurantes / Delivery>Restaurantes', 10, 0),
+  ('Restaurantes', 'CABZ', false, 'Restaurantes / Delivery', 'Restaurantes / Delivery>Restaurantes', 11, 0),
+  ('Restaurantes', 'CABZ', false, 'Restaurantes / Delivery', 'Restaurantes / Delivery>Restaurantes', 12, 0),
   ('Impuestos', 'CABZ', false, 'Impuestos', null, 1, 0),
   ('Impuestos', 'CABZ', false, 'Impuestos', null, 2, 0),
   ('Impuestos', 'CABZ', false, 'Impuestos', null, 3, 0),
@@ -212,18 +212,18 @@ from (values
   ('CFE', 'CABZ', false, 'Utilities', 'CFE', 10, 0),
   ('CFE', 'CABZ', false, 'Utilities', 'CFE', 11, 0),
   ('CFE', 'CABZ', false, 'Utilities', 'CFE', 12, 0),
-  ('Agua', 'CABZ', false, 'Utilities', 'Agua', 1, 1000),
-  ('Agua', 'CABZ', false, 'Utilities', 'Agua', 2, 0),
-  ('Agua', 'CABZ', false, 'Utilities', 'Agua', 3, 1032),
-  ('Agua', 'CABZ', false, 'Utilities', 'Agua', 4, 0),
-  ('Agua', 'CABZ', false, 'Utilities', 'Agua', 5, 834),
-  ('Agua', 'CABZ', false, 'Utilities', 'Agua', 6, 0),
-  ('Agua', 'CABZ', false, 'Utilities', 'Agua', 7, 694),
-  ('Agua', 'CABZ', false, 'Utilities', 'Agua', 8, 0),
-  ('Agua', 'CABZ', false, 'Utilities', 'Agua', 9, 0),
-  ('Agua', 'CABZ', false, 'Utilities', 'Agua', 10, 1175),
-  ('Agua', 'CABZ', false, 'Utilities', 'Agua', 11, 0),
-  ('Agua', 'CABZ', false, 'Utilities', 'Agua', 12, 0),
+  ('Agua', 'CABZ', false, 'Utilities', 'Utilities>Agua', 1, 1000),
+  ('Agua', 'CABZ', false, 'Utilities', 'Utilities>Agua', 2, 0),
+  ('Agua', 'CABZ', false, 'Utilities', 'Utilities>Agua', 3, 1032),
+  ('Agua', 'CABZ', false, 'Utilities', 'Utilities>Agua', 4, 0),
+  ('Agua', 'CABZ', false, 'Utilities', 'Utilities>Agua', 5, 834),
+  ('Agua', 'CABZ', false, 'Utilities', 'Utilities>Agua', 6, 0),
+  ('Agua', 'CABZ', false, 'Utilities', 'Utilities>Agua', 7, 694),
+  ('Agua', 'CABZ', false, 'Utilities', 'Utilities>Agua', 8, 0),
+  ('Agua', 'CABZ', false, 'Utilities', 'Utilities>Agua', 9, 0),
+  ('Agua', 'CABZ', false, 'Utilities', 'Utilities>Agua', 10, 1175),
+  ('Agua', 'CABZ', false, 'Utilities', 'Utilities>Agua', 11, 0),
+  ('Agua', 'CABZ', false, 'Utilities', 'Utilities>Agua', 12, 0),
   ('Pipa', 'CABU', false, 'Utilities', null, 1, 0),
   ('Pipa', 'CABU', false, 'Utilities', null, 2, 0),
   ('Pipa', 'CABU', false, 'Utilities', null, 3, 1500),
@@ -296,18 +296,18 @@ from (values
   ('Súper', 'MPZB', false, 'Hogar', 'Súper', 10, 6000),
   ('Súper', 'MPZB', false, 'Hogar', 'Súper', 11, 6000),
   ('Súper', 'MPZB', false, 'Hogar', 'Súper', 12, 6210),
-  ('Gasolina', 'CABZ', false, 'Transporte', 'Gasolina', 1, 1000),
-  ('Gasolina', 'CABZ', false, 'Transporte', 'Gasolina', 2, 1000),
-  ('Gasolina', 'CABZ', false, 'Transporte', 'Gasolina', 3, 4483),
-  ('Gasolina', 'CABZ', false, 'Transporte', 'Gasolina', 4, 7141),
-  ('Gasolina', 'CABZ', false, 'Transporte', 'Gasolina', 5, 1460),
-  ('Gasolina', 'CABZ', false, 'Transporte', 'Gasolina', 6, 3909),
-  ('Gasolina', 'CABZ', false, 'Transporte', 'Gasolina', 7, 1630),
-  ('Gasolina', 'CABZ', false, 'Transporte', 'Gasolina', 8, 3130),
-  ('Gasolina', 'CABZ', false, 'Transporte', 'Gasolina', 9, 1686),
-  ('Gasolina', 'CABZ', false, 'Transporte', 'Gasolina', 10, 6129),
-  ('Gasolina', 'CABZ', false, 'Transporte', 'Gasolina', 11, 0),
-  ('Gasolina', 'CABZ', false, 'Transporte', 'Gasolina', 12, 0),
+  ('Gasolina', 'CABZ', false, 'Transporte', 'Transporte>Gasolina', 1, 1000),
+  ('Gasolina', 'CABZ', false, 'Transporte', 'Transporte>Gasolina', 2, 1000),
+  ('Gasolina', 'CABZ', false, 'Transporte', 'Transporte>Gasolina', 3, 4483),
+  ('Gasolina', 'CABZ', false, 'Transporte', 'Transporte>Gasolina', 4, 7141),
+  ('Gasolina', 'CABZ', false, 'Transporte', 'Transporte>Gasolina', 5, 1460),
+  ('Gasolina', 'CABZ', false, 'Transporte', 'Transporte>Gasolina', 6, 3909),
+  ('Gasolina', 'CABZ', false, 'Transporte', 'Transporte>Gasolina', 7, 1630),
+  ('Gasolina', 'CABZ', false, 'Transporte', 'Transporte>Gasolina', 8, 3130),
+  ('Gasolina', 'CABZ', false, 'Transporte', 'Transporte>Gasolina', 9, 1686),
+  ('Gasolina', 'CABZ', false, 'Transporte', 'Transporte>Gasolina', 10, 6129),
+  ('Gasolina', 'CABZ', false, 'Transporte', 'Transporte>Gasolina', 11, 0),
+  ('Gasolina', 'CABZ', false, 'Transporte', 'Transporte>Gasolina', 12, 0),
   ('Limpieza', 'MPZB', false, 'Hogar', 'Personal doméstico', 1, 8500),
   ('Limpieza', 'MPZB', false, 'Hogar', 'Personal doméstico', 2, 8500),
   ('Limpieza', 'MPZB', false, 'Hogar', 'Personal doméstico', 3, 8500),
@@ -321,21 +321,18 @@ from (values
   ('Limpieza', 'MPZB', false, 'Hogar', 'Personal doméstico', 11, 8500),
   ('Limpieza', 'MPZB', false, 'Hogar', 'Personal doméstico', 12, 12750)
 ) as v(linea, pag, tr, cat, sub, mes, monto);
--- categoría también en 2026 (misma línea → misma categoría)
-update plan_akela p set categoria = x.categoria from (select distinct linea, categoria from plan_akela where user_id = crm_owner() and anio = 2027) x
- where p.user_id = crm_owner() and p.anio = 2026 and p.categoria is null and p.linea = x.linea;
-update plan_akela set categoria = case
-  when linea in ('IMSS') then 'Akela' when linea like 'Depósito%' then 'Akela'
-  when linea in ('CP José Luis','Liquidación José Luis') then 'Impuestos'
-  when linea in ('Seguro Mercedes','Tenencia Mercedes y frenos','Gasolina') then 'Transporte'
-  when linea in ('Colonoscopia','Estudios Chupitos','Ortopedia CABU') then 'Salud'
-  when linea in ('Gastos casa','Muebles, plantas y barandal','Predial','Súper CABZ') then 'Hogar'
-  else categoria end
- where user_id = crm_owner() and anio = 2026 and categoria is null;
--- v_plan_akela con categoría
 create or replace view v_plan_akela with (security_invoker = true) as
 select p.id, p.anio, p.linea, p.rubro_id, pg.codigo as pagador, p.es_transferencia, p.mes, p.monto, p.notas, p.categoria
 from plan_akela p join pagadores pg on pg.id = p.pagador_id;
 grant select on v_plan_akela to authenticated;
+-- Lo que sale de tu bolsa (CABZ, no transferencia, con subrubro) se refleja como gasto presupuestado 2027 en Gastos (libro AKELA).
+delete from movimientos where user_id = crm_owner() and estado = 'presupuesto' and notas = 'plan_akela:2027';
+select registrar_movimiento(jsonb_build_object('fecha', (make_date(2027, p.mes, 1) + interval '1 month - 1 day')::date, 'tipo', 'gasto', 'estado', 'presupuesto',
+         'rubro_id', p.rubro_id, 'cuenta', 'Cheques', 'monto', p.monto, 'moneda', 'MXN', 'descripcion', 'Plan Akela 2027: ' || p.linea, 'notas', 'plan_akela:2027',
+         'asignaciones', '[{"libro":"AKELA","pagador":"CABZ","porcentaje":100}]'::jsonb))
+from plan_akela p join pagadores pg on pg.id = p.pagador_id
+where p.user_id = crm_owner() and p.anio = 2027 and pg.codigo = 'CABZ' and not p.es_transferencia and p.rubro_id is not null and p.monto > 0;
+select linea, sum(monto) as sin_presupuesto_por_falta_de_subrubro from plan_akela p join pagadores pg on pg.id = p.pagador_id
+where p.user_id = crm_owner() and p.anio = 2027 and pg.codigo = 'CABZ' and not p.es_transferencia and p.rubro_id is null and p.monto > 0 group by 1;
 select categoria, sum(monto) filter (where not es_transferencia) as gasto, sum(monto) filter (where es_transferencia) as transferencias
 from plan_akela where user_id = crm_owner() and anio = 2027 group by 1 order by 2 desc;

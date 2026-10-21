@@ -241,6 +241,7 @@ export async function loadAkela(supabase: SupabaseClient, anio: number, rol: str
     tcHoy: Number(must<{ tc_mxn: number }[]>(tc, "tc")[0]?.tc_mxn ?? 18.5),
     params: { nac_papa: Number(cfg.data?.akela_nac_papa ?? 1961), nac_mama: Number(cfg.data?.akela_nac_mama ?? 1962), rend_real: Number(cfg.data?.akela_rend_real ?? 0.04), tc: Number(cfg.data?.akela_tc ?? 18.5) },
     rubrosAkela: rubrosAll.filter((r) => r.padre_id === akelaId).map((r) => ({ id: r.id, nombre: r.nombre })),
+    rubros: rubrosAll,
     pagadores: must<Catalogo[]>(pagadores, "pagadores"),
   };
 }
