@@ -126,6 +126,21 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
     } catch (e) { aviso("No se registró: " + (e as Error).message); }
     setBusy(false);
   };
+  const [depLM, setDepLM] = useState(initial.depLM);
+  const [abrirDep, setAbrirDep] = useState(false);
+  const fondoNombres = initial.fondo.map((f) => f.nombre);
+  const depLMFuera = (mes: number) => depLM.filter((d) => Number(d.fecha.slice(5, 7)) === mes && !fondoNombres.includes(d.cuenta_destino ?? "")).reduce((a, d) => a + d.monto_mxn, 0);
+  const registrarDepLM = async (g: { fecha: string; monto: number; destino_id: string; nota: string }) => {
+    const dest = initial.destinos.find((c) => c.id === g.destino_id); if (!dest) return aviso("Elige a dónde va.");
+    setBusy(true);
+    const { data, error } = await supabase.rpc("registrar_movimiento", { p: { fecha: g.fecha, tipo: "transferencia", cuenta: "Aportaciones Luis Miguel", cuenta_destino_id: g.destino_id, monto: g.monto, moneda: "MXN", contraparte: "HAMB", descripcion: g.nota || `Depósito de Luis Miguel → ${dest.nombre}` } });
+    setBusy(false);
+    if (error) return aviso("No se registró: " + error.message + (/Cuenta no encontrada/.test(error.message) ? " (falta la cuenta «Aportaciones Luis Miguel»)" : ""));
+    setDepLM((prev) => [...prev, { id: data as string, fecha: g.fecha, monto_mxn: g.monto, cuenta: "Aportaciones Luis Miguel", cuenta_destino: dest.nombre, descripcion: g.nota || null }]);
+    aviso(`Depósito de Luis Miguel ${fmt(g.monto)} → ${dest.nombre}${dest.tipo === "fondo" ? " (cuenta como aportación al fondo)" : ""}.`);
+    if (dest.tipo === "fondo") setTimeout(() => window.location.reload(), 1200);
+  };
+  const borrarDepLM = async (id: string) => { if (!confirm("¿Borrar este depósito?")) return; const { error } = await supabase.from("movimientos").delete().eq("id", id); if (error) return aviso(error.message); setDepLM((p) => p.filter((d) => d.id !== id)); };
   const borrarGasto = async (id: string) => {
     if (!confirm("¿Borrar este gasto? Se quita también de Gastos.")) return;
     const { error } = await supabase.from("movimientos").delete().eq("id", id);
@@ -182,6 +197,18 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
           <button className="btn ghost sm" type="button" onClick={() => setCelda2(null)}>Cerrar</button>
         </div>
         {g.msi > 0 && Number(g.monto) > 0 && <p className="hint" style={{ margin: "4px 0 0" }}>{g.msi} cuotas de {fmt(Number(g.monto) / g.msi)} desde {g.fecha}: cada una cae en su mes.</p>}
+      </div>);
+  };
+  /* depósito de Luis Miguel: pregunta a dónde va (fondo o una cuenta mía) */
+  const DepositoLM = () => {
+    const [g, setG] = useState({ fecha: new Date().toISOString().slice(0, 10), monto: "", destino_id: initial.destinos.find((c) => c.tipo === "fondo")?.id ?? "", nota: "" });
+    return (
+      <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", padding: "4px 0" }}>
+        <div><label style={{ margin: "0 0 2px" }}>Fecha</label><input type="date" value={g.fecha} onChange={(e) => setG({ ...g, fecha: e.target.value })} /></div>
+        <div><label style={{ margin: "0 0 2px" }}>Monto</label><input type="number" value={g.monto} onChange={(e) => setG({ ...g, monto: e.target.value })} style={{ width: 110 }} /></div>
+        <div><label style={{ margin: "0 0 2px" }}>¿A dónde va?</label><select value={g.destino_id} onChange={(e) => setG({ ...g, destino_id: e.target.value })}>{initial.destinos.map((c) => <option key={c.id} value={c.id}>{c.tipo === "fondo" ? `${c.nombre} (fondo)` : `${c.nombre} (a mí)`}</option>)}</select></div>
+        <div><label style={{ margin: "0 0 2px" }}>Nota</label><input type="text" value={g.nota} onChange={(e) => setG({ ...g, nota: e.target.value })} style={{ width: 200 }} /></div>
+        <button className="btn sm" type="button" disabled={busy || !(Number(g.monto) > 0)} onClick={() => registrarDepLM({ ...g, monto: Number(g.monto) })}>Registrar</button>
       </div>);
   };
   /* alta de concepto dentro de un rubro: subrubro existente o nuevo, quién paga, mensual o anual */
@@ -312,12 +339,14 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
               {!ro && <tr><td colSpan={17} style={{ background: "var(--bone)" }}>{nuevaEn === "__otro__" ? <NuevaLinea padre={null} /> : <button className="link" type="button" style={{ fontSize: 11 }} onClick={() => setNuevaEn("__otro__")}>+ concepto en otro rubro</button>}</td></tr>}
               <tr className="tot"><td colSpan={3}>Pago yo · plan</td>{Array.from({ length: 12 }, (_, i) => <td key={i} className="n">{fmt(sum(mios.map((l) => planMes(l, i))))}</td>)}<td className="n">{fmt(planTotal)}</td><td /></tr>
               <tr className="tot"><td colSpan={3}>Pago yo · real</td>{Array.from({ length: 12 }, (_, i) => { const v = sum(mios.map((l) => realLinea(l)[i])); const p = sum(mios.map((l) => planMes(l, i))); return <td key={i} className={"n" + (v > p && p ? " neg" : "")}>{v ? fmt(v) : "·"}</td>; })}<td className="n">{fmt(realTotal)}</td><td>{planTotal ? <Barra plan={planTotal} real={realTotal} pf={planAFecha} w={planTotal} h={10} /> : null}</td></tr>
-              {lineas.filter((l) => l.pagador === "HAMB").map((l) => (
-                <Fragment key={l.linea}>
-                  <tr className="sec"><td colSpan={17}><b>Luis Miguel</b> <span className="hint">informativo · va al Fondo Akela</span></td></tr>
-                  <tr><td style={{ fontWeight: 600, color: "var(--ink)" }}>{l.linea}</td><td className="hint">{l.subrubro ?? "—"}</td><td>HAMB</td>{l.meses.map((v, i) => <td key={i} className="n" style={{ color: "var(--gray-soft)" }}>{l.anual ? (i === 0 ? fmt(v) : "") : v ? fmt(v) : "·"}</td>)}<td className="n" style={{ fontWeight: 700 }}>{fmt(planAnual(l))}</td><td /></tr>
-                  <tr className="sub"><td style={{ paddingLeft: 18 }} className="hint">real (depósitos al fondo)</td><td /><td />{porMes.map((m, i) => <td key={i} className={"n" + (m.lm ? " pos" : "")}>{m.lm ? fmt(m.lm) : "·"}</td>)}<td className="n" style={{ fontWeight: 700 }}>{fmt(totLM)}</td><td>{planAnual(l) ? <Barra plan={planAnual(l)} real={totLM} pf={planFecha(l)} w={planAnual(l)} h={10} /> : null}</td></tr>
-                </Fragment>))}
+              {(() => { const l = lineas.find((x) => x.pagador === "HAMB"); const realLM = Array.from({ length: 12 }, (_, i) => porMes[i].lm + depLMFuera(i + 1)); const totReal = sum(realLM); return (
+                <Fragment>
+                  <tr className="sec"><td colSpan={17}><b>Luis Miguel</b> <span className="hint">informativo · sus depósitos</span>{!ro && <> <button className="link" type="button" style={{ fontSize: 11, marginLeft: 8 }} onClick={() => setAbrirDep(!abrirDep)}>{abrirDep ? "cancelar" : "+ depósito de Luis Miguel"}</button></>}</td></tr>
+                  {abrirDep && !ro && <tr><td colSpan={17} style={{ background: "var(--bone)" }}><DepositoLM /></td></tr>}
+                  {l && <tr><td style={{ fontWeight: 600, color: "var(--ink)" }}>{l.linea}</td><td className="hint">{l.subrubro ?? "—"}</td><td>HAMB</td>{l.meses.map((v, i) => <td key={i} className="n" style={{ color: "var(--gray-soft)" }}>{l.anual ? (i === 0 ? fmt(v) : "") : v ? fmt(v) : "·"}</td>)}<td className="n" style={{ fontWeight: 700 }}>{fmt(planAnual(l))}</td><td /></tr>}
+                  <tr className="sub"><td style={{ paddingLeft: 18 }} className="hint">real (al fondo + a mis cuentas)</td><td /><td />{realLM.map((v, i) => <td key={i} className={"n" + (v ? " pos" : "")}>{v ? fmt(v) : "·"}</td>)}<td className="n" style={{ fontWeight: 700 }}>{fmt(totReal)}</td><td>{l && planAnual(l) ? <Barra plan={planAnual(l)} real={totReal} pf={planFecha(l)} w={planAnual(l)} h={10} /> : null}</td></tr>
+                  {depLM.length > 0 && <tr><td colSpan={17} style={{ padding: "4px 10px" }}><details><summary style={{ cursor: "pointer", fontSize: 11 }}>Depósitos de Luis Miguel ({depLM.length})</summary><div className="tbl"><table style={{ fontSize: 12 }}><tbody>{depLM.map((d) => <tr key={d.id}><td>{d.fecha}</td><td>→ {d.cuenta_destino}{fondoNombres.includes(d.cuenta_destino ?? "") ? <span className="badge" style={{ marginLeft: 6 }}>fondo</span> : null}</td><td style={{ whiteSpace: "normal" }}>{d.descripcion}</td><td className="n" style={{ fontWeight: 600 }}>{fmt2(d.monto_mxn)}</td><td>{!ro && <button className="del" type="button" onClick={() => borrarDepLM(d.id)}>✕</button>}</td></tr>)}</tbody></table></div></details></td></tr>}
+                </Fragment>); })()}
               <tr className="tot" style={{ color: "var(--gray-soft)" }}><td colSpan={3}>Papá y mamá cubren (informativo)</td>{Array.from({ length: 12 }, (_, i) => <td key={i} className="n">{fmt(sum(ellos.map((l) => planMes(l, i))))}</td>)}<td className="n">{fmt(planEllos)}</td><td /></tr>
             </tbody>
           </table></TablaFija>)}
