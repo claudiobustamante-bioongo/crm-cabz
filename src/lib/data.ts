@@ -49,7 +49,7 @@ export async function loadGastos(supabase: SupabaseClient, anio: number): Promis
     movimientos: movs,
     asignaciones,
     cfdisSinLigar: must<Record<string, unknown>[]>(sinLigar, "cfdi").map((c) => ({ ...c, total_mxn: Number(c.total_mxn) })) as unknown as CfdiMini[],
-    facturasPorMov: must<{ movimiento_id: string }[]>(ligadas, "cfdi").reduce<Record<string, number>>((a, r) => { a[r.movimiento_id] = (a[r.movimiento_id] ?? 0) + 1; return a; }, {}),
+    facturasPorMov: ((ligadas.data ?? []) as { movimiento_id: string }[]).reduce<Record<string, number>>((a, r) => { a[r.movimiento_id] = (a[r.movimiento_id] ?? 0) + 1; return a; }, {}),
   };
 }
 
