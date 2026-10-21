@@ -22,6 +22,7 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
   const hoy = new Date(); const mesActual = hoy.getFullYear() === anio ? hoy.getMonth() + 1 : hoy.getFullYear() > anio ? 12 : 0;
 
   /* ---------- plan por línea ---------- */
+  const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
   const concil = anio <= 2026;   // 2026: el real se captura a mano (conciliación); desde 2027 el real sale de Gastos
   type Linea = { linea: string; pagador: string; transferencia: boolean; rubro_id: string | null; categoria: string | null; subrubro: string | null; anual: boolean; meses: number[]; realCon: (number | null)[] };
   const lineas = useMemo(() => {
@@ -32,10 +33,11 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
     });
     return [...m.values()].sort((a, b) => (a.categoria ?? "").localeCompare(b.categoria ?? "", "es") || a.linea.localeCompare(b.linea, "es"));
   }, [plan]);
-  const [realMov, setRealMov] = useState(initial.realPlan);
-  const realDe = (l: Linea, mes: number) => concil ? (l.realCon[mes - 1] ?? 0) : realMov.filter((r) => r.mes === mes && ((l.rubro_id && r.rubro_id === l.rubro_id) || r.linea === l.linea)).reduce((a, r) => a + Number(r.real), 0);
+  const [movs, setMovs] = useState(initial.movs);
+  const mesDe = (f: string) => Number(f.slice(5, 7));
+  const movsDe = (l: Linea, mes: number) => movs.filter((m) => m.estado === "real" && mesDe(m.fecha) === mes && l.rubro_id && m.rubro_id === l.rubro_id);
+  const realDe = (l: Linea, mes: number) => concil ? (l.realCon[mes - 1] ?? 0) : sum(movsDe(l, mes).map((m) => m.monto_mxn));
   const realLinea = (l: Linea) => Array.from({ length: 12 }, (_, i) => realDe(l, i + 1));
-  const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
   const planAnual = (l: Linea) => sum(l.meses);
   const planFecha = (l: Linea) => l.anual ? (planAnual(l) * mesActual) / 12 : sum(l.meses.slice(0, mesActual));
   const planMes = (l: Linea, i: number) => l.anual ? planAnual(l) / 12 : l.meses[i];
@@ -52,7 +54,7 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
   const planAFecha = sum(mios.map(planFecha));
   const realTotal = sum(mios.flatMap(realLinea));
   const planEllos = sum(ellos.map(planAnual));
-  const realSinLinea = useMemo(() => { if (concil) return []; const m = new Map<string, number>(); realMov.forEach((r) => { if (!Number(r.real)) return; if (lineas.some((l) => (l.rubro_id && r.rubro_id === l.rubro_id) || r.linea === l.linea)) return; m.set(r.linea, (m.get(r.linea) ?? 0) + Number(r.real)); }); return [...m].map(([linea, real]) => ({ linea, real })); }, [realMov, lineas, concil]);
+  const realSinLinea = useMemo(() => { if (concil) return []; const m = new Map<string, number>(); movs.forEach((r) => { if (r.estado !== "real" || !r.monto_mxn) return; if (lineas.some((l) => l.rubro_id && r.rubro_id === l.rubro_id)) return; const k = nombreRubro(r.rubro_id) ?? "Sin subrubro"; m.set(k, (m.get(k) ?? 0) + r.monto_mxn); }); return [...m].map(([linea, real]) => ({ linea, real })); }, [movs, lineas, concil]);
 
   /* ---------- aportaciones: quién puso el dinero ---------- */
   const gastosAkela = initial.libro.filter((x) => x.concepto === "gasto");
@@ -97,20 +99,37 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
   };
   const setAnualMonto = async (l: Linea, total: number) => { setBusy(true); await setCelda(l, 1, total); for (let m = 2; m <= 12; m++) if (l.meses[m - 1]) await setCelda(l, m, 0); setBusy(false); aviso(`${l.linea}: ${fmt(total)} anual.`); };
   /* real: 2026 → columna real_conciliado; 2027+ → movimiento de gasto en Gastos (libro Akela) por la diferencia */
-  const setReal = async (l: Linea, mes: number, nuevo: number, actual: number) => {
-    if (concil) {
-      const { error } = await supabase.from("plan_akela").update({ real_conciliado: nuevo || null }).eq("anio", anio).eq("linea", l.linea).eq("mes", mes);
-      if (error) return aviso("No se guardó: " + error.message + (/real_conciliado/.test(error.message) ? " (corre 36_akela_definitivo.sql)" : ""));
-      setPlan((prev) => prev.map((p) => p.linea === l.linea && p.mes === mes ? { ...p, real_conciliado: nuevo || null } : p));
-      return;
-    }
-    const dif = Math.round((nuevo - actual) * 100) / 100;
-    if (dif < 0) return aviso("Para bajar el real, edita o borra el gasto en la pestaña Gastos.");
+  const setRealCon = async (l: Linea, mes: number, nuevo: number) => {
+    const { error } = await supabase.from("plan_akela").update({ real_conciliado: nuevo || null }).eq("anio", anio).eq("linea", l.linea).eq("mes", mes);
+    if (error) return aviso("No se guardó: " + error.message + (/real_conciliado/.test(error.message) ? " (corre 36_akela_definitivo.sql)" : ""));
+    setPlan((prev) => prev.map((p) => p.linea === l.linea && p.mes === mes ? { ...p, real_conciliado: nuevo || null } : p));
+  };
+  /* gasto real (2027+): igual que en Gastos — fecha, descripción, cuenta, MSI; va al libro Akela con el subrubro del concepto */
+  const [celda, setCelda2] = useState<{ linea: string; mes: number } | null>(null);
+  const registrarGasto = async (l: Linea, g: { fecha: string; descripcion: string; monto: number; cuenta_id: string; msi: number; nota: string }) => {
     if (!l.rubro_id) return aviso("Liga el concepto a un subrubro (Editar plan) para registrar el gasto.");
-    const { error } = await supabase.rpc("registrar_movimiento", { p: { fecha: `${anio}-${String(mes).padStart(2, "0")}-01`, tipo: "gasto", estado: "real", rubro_id: l.rubro_id, cuenta: "Cheques", monto: dif, moneda: "MXN", descripcion: `Akela: ${l.linea}`, notas: "akela_grid", asignaciones: [{ libro: "AKELA", pagador: "CABZ", porcentaje: 100 }] } });
-    if (error) return aviso("No se registró: " + error.message);
-    setRealMov((prev) => [...prev, { anio, mes, linea: l.linea, rubro_id: l.rubro_id, plan: 0, real: dif, desviacion: dif }]);
-    aviso(`${l.linea} ${MESN[mes - 1]}: gasto de ${fmt(dif)} registrado en Gastos.`);
+    setBusy(true);
+    try {
+      const [y, m0, dia] = [+g.fecha.slice(0, 4), +g.fecha.slice(5, 7), +g.fecha.slice(8, 10)];
+      const fechaMes = (i: number) => { const d = new Date(Date.UTC(y, m0 - 1 + i, 1)); const ult = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate(); return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(Math.min(dia, ult)).padStart(2, "0")}`; };
+      const n = g.msi > 0 ? g.msi : 1; const cuota = g.msi > 0 ? Math.round((g.monto / g.msi) * 100) / 100 : g.monto;
+      const nuevos: typeof movs = [];
+      for (let i = 0; i < n; i++) {
+        const monto = g.msi > 0 && i === n - 1 ? Math.round((g.monto - cuota * (n - 1)) * 100) / 100 : cuota;
+        const notaMsi = g.msi > 0 ? `MSI ${i + 1}/${g.msi} · total ${fmt(g.monto)}` : "";
+        const p = { fecha: fechaMes(i), tipo: "gasto", estado: "real", descripcion: g.descripcion || l.linea, monto, cuenta_id: g.cuenta_id, rubro_id: l.rubro_id, notas: [g.nota, notaMsi].filter(Boolean).join(" · ") || null, asignaciones: [{ libro: "AKELA", pagador: "CABZ", porcentaje: 100 }] };
+        const { data, error } = await supabase.rpc("registrar_movimiento", { p }); if (error) throw error;
+        nuevos.push({ id: data as string, fecha: p.fecha, descripcion: p.descripcion, monto_mxn: monto, rubro_id: l.rubro_id, notas: p.notas, estado: "real", cuenta: initial.medios.find((c) => c.id === g.cuenta_id)?.nombre ?? null, pagador: "CABZ" });
+      }
+      setMovs((prev) => [...prev, ...nuevos].sort((a, b) => a.fecha.localeCompare(b.fecha)));
+      aviso(`${l.linea}: ${fmt(g.monto)} registrado en Gastos${g.msi > 0 ? ` · ${g.msi} MSI de ${fmt(cuota)}` : ""}.`);
+    } catch (e) { aviso("No se registró: " + (e as Error).message); }
+    setBusy(false);
+  };
+  const borrarGasto = async (id: string) => {
+    if (!confirm("¿Borrar este gasto? Se quita también de Gastos.")) return;
+    const { error } = await supabase.from("movimientos").delete().eq("id", id);
+    if (error) return aviso(error.message); setMovs((prev) => prev.filter((m) => m.id !== id));
   };
   const crearSubrubro = async (padreNombre: string, nombre: string) => {
     const padre = initial.rubros.find((r) => !r.padre_id && r.nombre === padreNombre); if (!padre) return null;
@@ -141,6 +160,30 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
       <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${Math.min(100, (real / w) * 100)}%`, background: real > pf && pf ? "var(--neg)" : "var(--akela)" }} />
       {pf > 0 && <div style={{ position: "absolute", left: `${Math.min(100, (pf / w) * 100)}%`, top: 0, bottom: 0, borderLeft: "2px dashed var(--ink)" }} />}
     </div>);
+  /* detalle y alta de gastos de un concepto en un mes (2027+) */
+  const PanelGasto = ({ l, mes }: { l: Linea; mes: number }) => {
+    const lista = movsDe(l, mes);
+    const hoy = new Date(); const def = hoy.getFullYear() === anio && hoy.getMonth() + 1 === mes ? hoy.toISOString().slice(0, 10) : `${anio}-${String(mes).padStart(2, "0")}-01`;
+    const [g, setG] = useState({ fecha: def, descripcion: "", monto: "", cuenta_id: initial.medios.find((c) => /cheques/i.test(c.nombre))?.id ?? initial.medios[0]?.id ?? "", msi: 0, nota: "" });
+    return (
+      <div>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}><b>{l.linea} · {MESN[mes - 1]} {anio}</b><span className="hint">plan {fmt(planMes(l, mes - 1))} · real {fmt(sum(lista.map((m) => m.monto_mxn)))}</span></div>
+        {lista.length > 0 && <div className="tbl" style={{ marginBottom: 6 }}><table style={{ fontSize: 12 }}><tbody>
+          {lista.map((m) => <tr key={m.id}><td>{m.fecha}</td><td style={{ whiteSpace: "normal" }}>{m.descripcion}{m.notas ? <span className="hint"> · {m.notas}</span> : null}</td><td className="hint">{m.cuenta}</td><td className="n" style={{ fontWeight: 600 }}>{fmt2(m.monto_mxn)}</td><td><button className="del" type="button" onClick={() => borrarGasto(m.id)}>✕</button></td></tr>)}
+        </tbody></table></div>}
+        <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
+          <div><label style={{ margin: "0 0 2px" }}>Fecha</label><input type="date" value={g.fecha} onChange={(e) => setG({ ...g, fecha: e.target.value })} /></div>
+          <div><label style={{ margin: "0 0 2px" }}>Concepto del gasto <span className="h">(p. ej. llantas)</span></label><input type="text" value={g.descripcion} onChange={(e) => setG({ ...g, descripcion: e.target.value })} placeholder={l.linea} style={{ width: 200 }} /></div>
+          <div><label style={{ margin: "0 0 2px" }}>Monto</label><input type="number" value={g.monto} onChange={(e) => setG({ ...g, monto: e.target.value })} style={{ width: 110 }} /></div>
+          <div><label style={{ margin: "0 0 2px" }}>Cuenta</label><select value={g.cuenta_id} onChange={(e) => setG({ ...g, cuenta_id: e.target.value })}>{initial.medios.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}</select></div>
+          <div><label style={{ margin: "0 0 2px" }}>Meses sin intereses</label><select value={g.msi} onChange={(e) => setG({ ...g, msi: Number(e.target.value) })}><option value={0}>no</option>{[3, 6, 9, 12, 18, 24].map((n) => <option key={n} value={n}>{n} MSI</option>)}</select></div>
+          <div><label style={{ margin: "0 0 2px" }}>Nota</label><input type="text" value={g.nota} onChange={(e) => setG({ ...g, nota: e.target.value })} style={{ width: 160 }} /></div>
+          <button className="btn sm" type="button" disabled={busy || !(Number(g.monto) > 0)} onClick={() => registrarGasto(l, { ...g, monto: Number(g.monto) })}>Registrar gasto</button>
+          <button className="btn ghost sm" type="button" onClick={() => setCelda2(null)}>Cerrar</button>
+        </div>
+        {g.msi > 0 && Number(g.monto) > 0 && <p className="hint" style={{ margin: "4px 0 0" }}>{g.msi} cuotas de {fmt(Number(g.monto) / g.msi)} desde {g.fecha}: cada una cae en su mes.</p>}
+      </div>);
+  };
   /* alta de concepto dentro de un rubro: subrubro existente o nuevo, quién paga, mensual o anual */
   const NuevaLinea = ({ padre }: { padre: string | null }) => {
     const [f, setF] = useState({ padre: padre ?? "", concepto: "", rubro_id: "", nuevoSub: "", pagador: "CABZ", modo: "mensual" as "mensual" | "anual", monto: "", transferencia: false });
@@ -211,7 +254,7 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
           <div className="stat"><div className="v">{fmt(totLM)}</div><div className="l">Luis Miguel → directo al fondo{totRetLM ? ` · neto ${fmt(netoLM)}` : ""}</div></div>
         </div>
         <div className="ct"><span>Plan vs real</span>
-          <span className="pills" style={{ margin: 0 }}><button type="button" className="pill" aria-pressed={vista === "cuadricula"} onClick={() => setVista("cuadricula")}>Cuadrícula</button><button type="button" className="pill" aria-pressed={vista === "rubros"} onClick={() => setVista("rubros")}>Por rubro</button>{!ro && <button type="button" className="pill" aria-pressed={vista === "plan"} onClick={() => setVista("plan")}>Editar plan</button>}</span>
+          <span className="pills" style={{ margin: 0 }}><button type="button" className="pill" aria-pressed={vista === "cuadricula"} onClick={() => setVista("cuadricula")}>Cuadrícula</button><button type="button" className="pill" aria-pressed={vista === "rubros"} onClick={() => setVista("rubros")}>Por rubro</button><a className="pill" href={`/api/akela/xlsx?anio=${anio}`} title="Plan, real y gastos del año en Excel" style={{ marginLeft: 6 }}>⬇ Excel</a>{!ro && <button type="button" className="pill" aria-pressed={vista === "plan"} onClick={() => setVista("plan")}>Editar plan</button>}</span>
           {!ro && vista === "plan" && <span style={{ display: "flex", gap: 6 }}><button className="btn ghost sm" type="button" onClick={() => proponer("anual")} title={`Promedio de los 12 meses de ${anio - 1}`}>Proponer: promedio {anio - 1}</button><button className="btn ghost sm" type="button" onClick={() => proponer("ult3")} title={`Promedio de los últimos 3 meses con datos de ${anio - 1}`}>Proponer: últimos 3 meses</button></span>}</div>
 
         {vista === "rubros" && (() => {
@@ -259,13 +302,22 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
                         <td rowSpan={editable ? 2 : 1} style={{ verticalAlign: "middle" }}>{tp ? <Barra plan={tp} real={tr} pf={tpf} w={tp} h={10} /> : null}</td>
                       </tr>
                       {editable && <tr className="sub"><td style={{ paddingLeft: 18 }} className="hint">real</td><td /><td />
-                        {re.map((v, i) => { const sobre = v > planMes(l, i) && planMes(l, i) > 0; return <td key={i} className="n" style={{ padding: "1px 3px" }}><input type="number" defaultValue={v || ""} placeholder="·" onBlur={(e) => { const n = Number(e.target.value) || 0; if (n !== v) setReal(l, i + 1, n, v); }} style={{ width: 66, padding: "2px 4px", textAlign: "right", fontSize: 11.5, color: sobre ? "var(--neg)" : undefined, fontWeight: v ? 600 : 400 }} /></td>; })}
+                        {re.map((v, i) => { const sobre = v > planMes(l, i) && planMes(l, i) > 0; const sel = celda?.linea === l.linea && celda.mes === i + 1; return <td key={i} className="n" style={{ padding: "1px 3px" }}>{concil
+                          ? <input type="number" defaultValue={v || ""} placeholder="·" onBlur={(e) => { const n = Number(e.target.value) || 0; if (n !== v) setRealCon(l, i + 1, n); }} style={{ width: 66, padding: "2px 4px", textAlign: "right", fontSize: 11.5, color: sobre ? "var(--neg)" : undefined, fontWeight: v ? 600 : 400 }} />
+                          : <button type="button" className="link" onClick={() => setCelda2(sel ? null : { linea: l.linea, mes: i + 1 })} title="Ver / registrar gastos de este mes" style={{ width: 66, textAlign: "right", fontSize: 11.5, color: sobre ? "var(--neg)" : v ? "var(--ink)" : "var(--gray-soft)", fontWeight: v ? 600 : 400, background: sel ? "var(--cream)" : undefined, borderRadius: 4, padding: "2px 4px" }}>{v ? fmt(v) : "+"}</button>}</td>; })}
                         <td className={"n" + (tr > tpf && tpf ? " neg" : "")} style={{ fontWeight: 700 }}>{fmt(tr)}</td></tr>}
+                      {editable && !concil && celda?.linea === l.linea && <tr><td colSpan={17} style={{ background: "var(--bone)", padding: "6px 10px" }}><PanelGasto l={l} mes={celda.mes} /></td></tr>}
                     </Fragment>); })}
                 </Fragment>); })}
               {!ro && <tr><td colSpan={17} style={{ background: "var(--bone)" }}>{nuevaEn === "__otro__" ? <NuevaLinea padre={null} /> : <button className="link" type="button" style={{ fontSize: 11 }} onClick={() => setNuevaEn("__otro__")}>+ concepto en otro rubro</button>}</td></tr>}
               <tr className="tot"><td colSpan={3}>Pago yo · plan</td>{Array.from({ length: 12 }, (_, i) => <td key={i} className="n">{fmt(sum(mios.map((l) => planMes(l, i))))}</td>)}<td className="n">{fmt(planTotal)}</td><td /></tr>
               <tr className="tot"><td colSpan={3}>Pago yo · real</td>{Array.from({ length: 12 }, (_, i) => { const v = sum(mios.map((l) => realLinea(l)[i])); const p = sum(mios.map((l) => planMes(l, i))); return <td key={i} className={"n" + (v > p && p ? " neg" : "")}>{v ? fmt(v) : "·"}</td>; })}<td className="n">{fmt(realTotal)}</td><td>{planTotal ? <Barra plan={planTotal} real={realTotal} pf={planAFecha} w={planTotal} h={10} /> : null}</td></tr>
+              {lineas.filter((l) => l.pagador === "HAMB").map((l) => (
+                <Fragment key={l.linea}>
+                  <tr className="sec"><td colSpan={17}><b>Luis Miguel</b> <span className="hint">informativo · va al Fondo Akela</span></td></tr>
+                  <tr><td style={{ fontWeight: 600, color: "var(--ink)" }}>{l.linea}</td><td className="hint">{l.subrubro ?? "—"}</td><td>HAMB</td>{l.meses.map((v, i) => <td key={i} className="n" style={{ color: "var(--gray-soft)" }}>{l.anual ? (i === 0 ? fmt(v) : "") : v ? fmt(v) : "·"}</td>)}<td className="n" style={{ fontWeight: 700 }}>{fmt(planAnual(l))}</td><td /></tr>
+                  <tr className="sub"><td style={{ paddingLeft: 18 }} className="hint">real (depósitos al fondo)</td><td /><td />{porMes.map((m, i) => <td key={i} className={"n" + (m.lm ? " pos" : "")}>{m.lm ? fmt(m.lm) : "·"}</td>)}<td className="n" style={{ fontWeight: 700 }}>{fmt(totLM)}</td><td>{planAnual(l) ? <Barra plan={planAnual(l)} real={totLM} pf={planFecha(l)} w={planAnual(l)} h={10} /> : null}</td></tr>
+                </Fragment>))}
               <tr className="tot" style={{ color: "var(--gray-soft)" }}><td colSpan={3}>Papá y mamá cubren (informativo)</td>{Array.from({ length: 12 }, (_, i) => <td key={i} className="n">{fmt(sum(ellos.map((l) => planMes(l, i))))}</td>)}<td className="n">{fmt(planEllos)}</td><td /></tr>
             </tbody>
           </table></TablaFija>)}
@@ -309,7 +361,7 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
           </tbody>
         </table></div>}
         {realSinLinea.length > 0 && <p className="hint">Gastos Akela {anio} sin concepto en el plan: {realSinLinea.map((r) => `${r.linea} ${fmt(r.real)}`).join(" · ")}. Agrega el concepto ligado a ese subrubro.</p>}
-        <p className="hint">{concil ? `${anio}: el real se captura en la fila «real» (conciliación con tu tabla); no toca Gastos.` : `Desde 2027 lo que capturas en «real» se registra como gasto en Gastos (libro Akela, cuenta Cheques, día 1 del mes) y lo que registres en Gastos aparece aquí.`} El presupuesto es lo que sale de ti: gastos directos + depósitos a papá y mamá. Sus conceptos son informativos (en qué se va el depósito) y no suman al total. Línea punteada = dónde deberías ir hoy; rojo = por arriba del plan a la fecha.</p>
+        <p className="hint">{concil ? `${anio}: el real se captura en la fila «real» (conciliación con tu tabla); no toca Gastos.` : `Desde 2027 la celda «real» abre los gastos del mes: los registras como en Gastos (fecha, concepto, cuenta, meses sin intereses) y van al libro Akela con el subrubro del concepto; lo que registres en Gastos aparece aquí.`} El presupuesto es lo que sale de ti: gastos directos + depósitos a papá y mamá. Sus conceptos son informativos (en qué se va el depósito) y no suman al total. Línea punteada = dónde deberías ir hoy; rojo = por arriba del plan a la fecha.</p>
       </div>
       <h2>2 · Aportaciones {anio} · yo vs Luis Miguel</h2>
       <div className="card">

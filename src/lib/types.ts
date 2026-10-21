@@ -222,6 +222,7 @@ export interface ContabilidadData {
 export interface PlanAkela { id: string; anio: number; linea: string; categoria?: string | null; subrubro?: string | null; real_conciliado?: number | null; anual?: boolean; rubro_id: string | null; pagador: string; es_transferencia: boolean; mes: number; monto: number; notas: string | null }
 export interface AkelaRealPlan { anio: number; mes: number; linea: string; rubro_id: string | null; plan: number; real: number; desviacion: number }
 export interface LibroAkela { fecha: string; mes: string; concepto: "aportacion" | "gasto" | "retiro"; descripcion: string | null; quien: string | null; rubro: string | null; entrada_mxn: number; salida_mxn: number }
+export interface MovAkela { id: string; fecha: string; descripcion: string | null; monto_mxn: number; rubro_id: string | null; notas: string | null; estado: string; cuenta: string | null; pagador: string | null }
 export interface AkelaData {
   anio: number;
   anios: number[];
@@ -234,5 +235,7 @@ export interface AkelaData {
   params: { nac_papa: number; nac_mama: number; rend_real: number; tc: number };
   rubrosAkela: { id: string; nombre: string }[];
   rubros: { id: string; nombre: string; codigo: string; padre_id: string | null }[];   // árbol completo de rubros de gasto
+  movs: MovAkela[];            // gastos del año en el libro Akela (para la celda real y su detalle)
+  medios: { id: string; nombre: string }[];   // cuentas con las que se paga
   pagadores: Catalogo[];
 }

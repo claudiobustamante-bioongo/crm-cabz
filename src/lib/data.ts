@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { AjusteFiscal, AkelaData, AkelaRealPlan, Asignacion, Catalogo, LibroAkela, PlanAkela, Cfdi, CfdiMensual, CfdiMini, ContabMes, ContabilidadData, Cuenta, DeduccionAnual, Evento, FacturaExt, FacturacionData, GastoSinCfdi, GastosData, IbkrMes, Ingreso, IngresosData, InversionesData, Movimiento, NetWorth, Obligacion, Rubro, TipoCambio } from "./types";
+import type { AjusteFiscal, AkelaData, MovAkela, AkelaRealPlan, Asignacion, Catalogo, LibroAkela, PlanAkela, Cfdi, CfdiMensual, CfdiMini, ContabMes, ContabilidadData, Cuenta, DeduccionAnual, Evento, FacturaExt, FacturacionData, GastoSinCfdi, GastosData, IbkrMes, Ingreso, IngresosData, InversionesData, Movimiento, NetWorth, Obligacion, Rubro, TipoCambio } from "./types";
 
 const TIPOS_GASTO = ["gasto", "ahorro", "abono_deuda"];
 
@@ -203,7 +203,7 @@ export async function loadContabilidad(supabase: SupabaseClient, anio: number): 
 export async function loadAkela(supabase: SupabaseClient, anio: number, rol: string | null): Promise<AkelaData> {
   const desde = `${anio}-01-01`, hasta = `${anio}-12-31`;
   const num = (r: Record<string, unknown>) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, typeof v === "string" && /^-?\d+(\.\d+)?$/.test(v) ? Number(v) : v]));
-  const [plan, rp, libro, cuentas, saldos, ibkr, ledger, tc, cfg, anios, rubros, pagadores] = await Promise.all([
+  const [plan, rp, libro, cuentas, saldos, ibkr, ledger, tc, cfg, anios, rubros, asigAk, movAnio, medios, pagadores] = await Promise.all([
     supabase.from("v_plan_akela").select("*").eq("anio", anio).order("linea").order("mes"),
     supabase.from("v_akela_real_vs_plan").select("*").eq("anio", anio),
     supabase.from("v_libro_akela").select("*").gte("fecha", desde).lte("fecha", hasta).order("fecha"),
@@ -215,6 +215,9 @@ export async function loadAkela(supabase: SupabaseClient, anio: number, rol: str
     supabase.from("app_config").select("akela_nac_papa,akela_nac_mama,akela_rend_real,akela_tc").maybeSingle(),
     supabase.from("anios").select("anio").order("anio"),
     supabase.from("rubros").select("id,nombre,codigo,padre_id").eq("activo", true).eq("naturaleza", "gasto"),
+    supabase.from("v_asignaciones").select("movimiento_id,pagador,monto_mxn").eq("libro", "AKELA").eq("tipo", "gasto").gte("fecha", desde).lte("fecha", hasta),
+    supabase.from("v_movimientos").select("id,fecha,descripcion,monto_mxn,rubro_id,notas,estado,cuenta").eq("tipo", "gasto").gte("fecha", desde).lte("fecha", hasta),
+    supabase.from("cuentas").select("id,nombre").eq("activa", true).eq("es_medio_pago", true).order("nombre"),
     supabase.from("pagadores").select("codigo,nombre").eq("activo", true),
   ]);
   type CRow = { id: string; nombre: string; tipo: string; moneda: string; pagadores: { codigo: string } | { codigo: string }[] | null };
@@ -242,6 +245,8 @@ export async function loadAkela(supabase: SupabaseClient, anio: number, rol: str
     params: { nac_papa: Number(cfg.data?.akela_nac_papa ?? 1961), nac_mama: Number(cfg.data?.akela_nac_mama ?? 1962), rend_real: Number(cfg.data?.akela_rend_real ?? 0.04), tc: Number(cfg.data?.akela_tc ?? 18.5) },
     rubrosAkela: rubrosAll.filter((r) => r.padre_id === akelaId).map((r) => ({ id: r.id, nombre: r.nombre })),
     rubros: rubrosAll,
+    movs: (() => { const ak = new Map((asigAk.data ?? []).map((a) => [a.movimiento_id as string, a])); return ((movAnio.data ?? []) as Record<string, unknown>[]).filter((m) => ak.has(m.id as string)).map((m) => { const a = ak.get(m.id as string)!; return { ...num(m), monto_mxn: Number(a.monto_mxn), pagador: a.pagador as string } as unknown as MovAkela; }).sort((a, b) => a.fecha.localeCompare(b.fecha)); })(),
+    medios: (medios.data ?? []) as { id: string; nombre: string }[],
     pagadores: must<Catalogo[]>(pagadores, "pagadores"),
   };
 }
