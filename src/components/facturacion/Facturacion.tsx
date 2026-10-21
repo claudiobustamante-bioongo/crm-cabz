@@ -121,6 +121,22 @@ export function Facturacion({ initial, vista = "resumen", filtro }: { initial: F
       aviso(`Gasto creado: ${rubro.nombre} ${fmt2(c.total)} (${initial.cuentas.find((x) => x.id === cCuenta)?.nombre}) · libro ${libro}${n > 1 ? ` · ${n} MSI de ${fmt2(cuota)}` : ""}.`);
     } catch (e) { aviso("No se creó: " + (e as Error).message); alert("No se creó el gasto: " + (e as Error).message); } finally { setBusy(false); }
   };
+  /* ---------- ligar a un gasto ya registrado ---------- */
+  const [ligando, setLigando] = useState<string | null>(null);   // uuid de la factura
+  const [sinCfdi, setSinCfdi] = useState(initial.sinCfdi);
+  const candidatos = (c: Cfdi) => [...sinCfdi].sort((a, b) => {
+    const d = (g: typeof a) => Math.abs(g.monto_mxn - c.total_mxn) / Math.max(1, c.total_mxn) + Math.abs(new Date(g.fecha).getTime() - new Date(c.fecha).getTime()) / 8.64e7 / 60;
+    return d(a) - d(b);
+  });
+  const ligarA = async (c: Cfdi, movId: string) => {
+    if (!movId) return;
+    const g = sinCfdi.find((x) => x.id === movId);
+    const { error } = await supabase.from("movimientos").update({ cfdi_uuid: c.uuid, tiene_cfdi: true }).eq("id", movId);
+    if (error) return aviso("No se ligó: " + error.message);
+    await supabase.from("cfdi").update({ estado: "ligada", ...(c.rubro_id || !g?.rubro_id ? {} : { rubro_id: g.rubro_id }) }).eq("uuid", c.uuid);
+    setSinCfdi((prev) => prev.filter((x) => x.id !== movId)); setLigando(null);
+    await refrescar(c.uuid); aviso("Factura ligada al gasto.");
+  };
   const setRubro = async (c: Cfdi, rubro_id: string) => {
     await supabase.from("cfdi").update({ rubro_id: rubro_id || null }).eq("uuid", c.uuid);
     if (c.movimiento_id && rubro_id) await supabase.from("movimientos").update({ rubro_id }).eq("id", c.movimiento_id);
@@ -389,7 +405,14 @@ export function Facturacion({ initial, vista = "resumen", filtro }: { initial: F
                 <td><input type="text" defaultValue={c.notas ?? ""} onBlur={(e) => e.target.value !== (c.notas ?? "") && editar(c, "notas", e.target.value)} style={{ padding: "3px 5px", fontSize: 12, width: 140 }} /></td>
                 <td><span className="badge" style={{ background: ESTADO[c.estado][1] }}>{ESTADO[c.estado][0]}</span>{c.movimiento && <div style={{ fontSize: 11, color: "var(--gray-soft)", whiteSpace: "normal" }}>{c.movimiento} · {c.cuenta}</div>}</td>
                 <td style={{ whiteSpace: "nowrap" }}>
-                  {c.estado !== "ligada" && c.tipo === "recibida" && <><button className="link" type="button" onClick={() => { setCreando(c); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Crear gasto</button> · </>}
+                  {c.estado !== "ligada" && c.tipo === "recibida" && <><button className="link" type="button" onClick={() => { setCreando(c); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Crear gasto</button> · <button className="link" type="button" onClick={() => setLigando(ligando === c.uuid ? null : c.uuid)}>Ligar a gasto</button> · </>}
+                  {ligando === c.uuid && (
+                    <div style={{ marginTop: 4, whiteSpace: "normal" }}>
+                      <select autoFocus defaultValue="" onChange={(e) => ligarA(c, e.target.value)} style={{ padding: "3px 5px", fontSize: 12, maxWidth: 360 }}>
+                        <option value="">— elige el gasto ({candidatos(c).length} sin factura) —</option>
+                        {candidatos(c).slice(0, 40).map((g) => <option key={g.id} value={g.id}>{g.fecha} · {g.grupo} › {g.rubro} · {g.cuenta} · {fmt2(g.monto_mxn)}{Math.abs(g.monto_mxn - c.total_mxn) < 1 ? " ✓" : ""}</option>)}
+                      </select> <button className="link" type="button" onClick={() => setLigando(null)}>cancelar</button>
+                    </div>)}
                   {c.estado === "ligada" && <><button className="link" type="button" onClick={() => desligar(c)}>Desligar</button> · </>}
                   {c.estado === "nueva" && <><button className="link" type="button" onClick={() => setEstado(c, "sin_gasto")}>Sin gasto</button> · </>}
                   <button className="link" type="button" onClick={() => abrir(c.xml_path)}>XML</button>{c.pdf_path && <> · <button className="link" type="button" onClick={() => abrir(c.pdf_path)}>PDF</button></>} · <button className="link" type="button" title={c.link_drive ? "Abrir en Drive" : "Buscar en Drive por UUID"} onClick={() => drive(c)}>{c.link_drive ? "Drive ↗" : "Drive ?"}</button>
