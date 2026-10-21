@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { AjusteFiscal, Asignacion, Catalogo, Cfdi, CfdiMensual, ContabMes, ContabilidadData, Cuenta, DeduccionAnual, Evento, FacturaExt, FacturacionData, GastoSinCfdi, GastosData, IbkrMes, Ingreso, IngresosData, InversionesData, Movimiento, NetWorth, Obligacion, Rubro, TipoCambio } from "./types";
+import type { AjusteFiscal, Asignacion, Catalogo, Cfdi, CfdiMensual, CfdiMini, ContabMes, ContabilidadData, Cuenta, DeduccionAnual, Evento, FacturaExt, FacturacionData, GastoSinCfdi, GastosData, IbkrMes, Ingreso, IngresosData, InversionesData, Movimiento, NetWorth, Obligacion, Rubro, TipoCambio } from "./types";
 
 const TIPOS_GASTO = ["gasto", "ahorro", "abono_deuda"];
 
@@ -10,7 +10,7 @@ function must<T>(r: { data: T | null; error: { message: string } | null }, what:
 
 export async function loadGastos(supabase: SupabaseClient, anio: number): Promise<GastosData> {
   const desde = `${anio}-01-01`, hasta = `${anio}-12-31`;
-  const [rubros, cuentas, libros, pagadores, eventos, movimientos, anios] = await Promise.all([
+  const [rubros, cuentas, libros, pagadores, eventos, movimientos, anios, sinLigar] = await Promise.all([
     supabase.from("rubros").select("id,codigo,nombre,padre_id,clasificacion,emoji,activo")
       .eq("naturaleza", "gasto").eq("activo", true).order("orden").order("nombre"),
     supabase.from("cuentas").select("id,nombre,tipo,es_medio_pago").eq("activa", true).order("nombre"),
@@ -22,6 +22,7 @@ export async function loadGastos(supabase: SupabaseClient, anio: number): Promis
       .in("tipo", TIPOS_GASTO).gte("fecha", desde).lte("fecha", hasta)
       .order("fecha", { ascending: false }).range(0, 9999),
     supabase.from("anios").select("anio").order("anio"),
+    supabase.from("v_cfdi").select("uuid,fecha,emisor_nombre,total_mxn,concepto").eq("tipo", "recibida").in("tipo_comprobante", ["I"]).is("movimiento_id", null).gte("fecha", desde).lte("fecha", hasta).order("fecha", { ascending: false }).range(0, 1999),
   ]);
 
   const movs = must<Movimiento[]>(movimientos, "movimientos");
@@ -46,6 +47,7 @@ export async function loadGastos(supabase: SupabaseClient, anio: number): Promis
     eventos: must<Evento[]>(eventos, "eventos"),
     movimientos: movs,
     asignaciones,
+    cfdisSinLigar: must<Record<string, unknown>[]>(sinLigar, "cfdi").map((c) => ({ ...c, total_mxn: Number(c.total_mxn) })) as unknown as CfdiMini[],
   };
 }
 

@@ -2,7 +2,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import type { Asignacion, Clasificacion, GastosData, Movimiento, Rubro } from "@/lib/types";
+import type { Asignacion, CfdiMini, Clasificacion, GastosData, Movimiento, Rubro } from "@/lib/types";
 import { CLS_COLOR, CLS_LABEL, color, cuentaColor, fmt, mesKey, ml, slug } from "@/lib/format";
 import { Formulario, type NuevoGasto } from "./Formulario";
 import { BarrasMes, Dona } from "./Graficas";
@@ -134,6 +134,31 @@ export function Gastos({ initial }: { initial: GastosData }) {
       setAsigs((prev) => [...prev.filter((x) => x.movimiento_id !== edit.id), ...((a.data ?? []) as Asignacion[])]);
       setEdit(null); aviso("Movimiento actualizado.");
     } catch (e) { aviso("No se guardó: " + (e as Error).message); } finally { setBusy(false); }
+  };
+
+  /* ---------- ligar factura desde la lista ---------- */
+  const [sinLigar, setSinLigar] = useState<CfdiMini[]>(initial.cfdisSinLigar);
+  const [ligando, setLigando] = useState<string | null>(null);   // id del movimiento
+  const candidatas = (m: Movimiento) => [...sinLigar].sort((a, b) => {
+    const da = Math.abs(a.total_mxn - m.monto_mxn) / Math.max(1, m.monto_mxn) + Math.abs(new Date(a.fecha).getTime() - new Date(m.fecha).getTime()) / 8.64e7 / 60;
+    const db = Math.abs(b.total_mxn - m.monto_mxn) / Math.max(1, m.monto_mxn) + Math.abs(new Date(b.fecha).getTime() - new Date(m.fecha).getTime()) / 8.64e7 / 60;
+    return da - db;
+  });
+  const ligar = async (m: Movimiento, uuid: string) => {
+    if (!uuid) return;
+    const { error } = await supabase.from("movimientos").update({ cfdi_uuid: uuid, tiene_cfdi: true }).eq("id", m.id);
+    if (error) return aviso("No se ligó: " + error.message);
+    await supabase.from("cfdi").update({ estado: "ligada" }).eq("uuid", uuid);
+    setMovs((prev) => prev.map((x) => (x.id === m.id ? { ...x, cfdi_uuid: uuid } : x)));
+    setSinLigar((prev) => prev.filter((c) => c.uuid !== uuid)); setLigando(null);
+    aviso("Factura ligada al gasto.");
+  };
+  const desligar = async (m: Movimiento) => {
+    if (!m.cfdi_uuid) return;
+    const { error } = await supabase.rpc("desligar_cfdi", { p_uuid: m.cfdi_uuid });
+    if (error) return aviso("No se desligó: " + error.message);
+    setMovs((prev) => prev.map((x) => (x.id === m.id ? { ...x, cfdi_uuid: null } : x)));
+    router.refresh();
   };
 
   const borrar = async (m: Movimiento) => {
@@ -285,9 +310,18 @@ export function Gastos({ initial }: { initial: GastosData }) {
                     <td><span className="badge" style={{ background: cuentaColor(m.cuenta) }}>{m.cuenta}</span></td>
                     <td>{m.fecha.slice(8, 10)} {ml(m.fecha)}</td>
                     <td>{as.map((a) => `${a.libro}${a.pagador !== "CABZ" ? " · " + a.pagador : ""}`).join(", ") || (m.tipo === "ahorro" ? "ahorro" : m.tipo)}</td>
-                    <td style={{ whiteSpace: "normal", color: "var(--gray-soft)" }}>{[m.evento, m.notas].filter(Boolean).join(" · ")}</td>
+                    <td style={{ whiteSpace: "normal", color: "var(--gray-soft)" }}>{[m.evento, m.notas].filter(Boolean).join(" · ")}
+                      {m.cfdi_uuid && <> {m.notas || m.evento ? "· " : ""}<span className="badge" style={{ background: "var(--aho)" }} title={m.cfdi_uuid}>CFDI</span> <button className="link" type="button" onClick={() => desligar(m)} style={{ fontSize: 11 }}>desligar</button></>}
+                      {ligando === m.id && (
+                        <div style={{ marginTop: 4 }}>
+                          <select autoFocus defaultValue="" onChange={(e) => ligar(m, e.target.value)} style={{ padding: "3px 5px", fontSize: 12, maxWidth: 360 }}>
+                            <option value="">— elige la factura ({candidatas(m).length} sin ligar) —</option>
+                            {candidatas(m).slice(0, 40).map((c) => <option key={c.uuid} value={c.uuid}>{c.fecha} · {c.emisor_nombre ?? "?"} · {fmt(c.total_mxn)}{Math.abs(c.total_mxn - m.monto_mxn) < 1 ? " ✓" : ""}</option>)}
+                          </select> <button className="link" type="button" onClick={() => setLigando(null)}>cancelar</button>
+                        </div>)}
+                    </td>
                     <td className="n" style={{ fontWeight: 700, color: "var(--ink)" }}>{fmt(m.monto_mxn)}</td>
-                    <td style={{ whiteSpace: "nowrap" }}><button className="link" type="button" aria-label="Editar" title="Editar" onClick={() => empezarEdicion(m)}>✎</button> <button className="del" type="button" aria-label="Borrar" onClick={() => borrar(m)}>✕</button></td>
+                    <td style={{ whiteSpace: "nowrap" }}>{!m.cfdi_uuid && m.tipo === "gasto" && <><button className="link" type="button" aria-label="Ligar factura" title="Ligar factura" onClick={() => setLigando(m.id)}>🔗</button> </>}<button className="link" type="button" aria-label="Editar" title="Editar" onClick={() => empezarEdicion(m)}>✎</button> <button className="del" type="button" aria-label="Borrar" onClick={() => borrar(m)}>✕</button></td>
                   </tr>
                 );
               })}

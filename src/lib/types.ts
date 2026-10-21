@@ -68,7 +68,9 @@ export interface GastosData {
   eventos: Evento[];
   movimientos: Movimiento[];
   asignaciones: Asignacion[];
+  cfdisSinLigar: CfdiMini[];   // recibidas del año sin gasto ligado, para enlazar desde la lista
 }
+export interface CfdiMini { uuid: string; fecha: string; emisor_nombre: string | null; total_mxn: number; concepto: string | null }
 
 export type TipoIngreso = "sueldo" | "comision" | "bono" | "dividendo_interes" | "reembolso" | "aportacion_akela" | "otro";
 
