@@ -19,8 +19,9 @@ export function TablaFija({ children, fijarUltima = true, fontSize, alto, grupo,
     const medir = () => setW(el.scrollWidth);
     medir();
     const ro = new ResizeObserver(medir); ro.observe(el); if (el.firstElementChild) ro.observe(el.firstElementChild);
+    window.addEventListener("resize", medir); const t = setTimeout(medir, 300);
     const off = registrar(grupo, el);
-    return () => { ro.disconnect(); off(); };
+    return () => { ro.disconnect(); off(); window.removeEventListener("resize", medir); clearTimeout(t); };
   }, [children, grupo]);
   const sync = (from: HTMLDivElement | null, to: HTMLDivElement | null) => { if (from && to && Math.abs(from.scrollLeft - to.scrollLeft) > 1) to.scrollLeft = from.scrollLeft; };
   return (
