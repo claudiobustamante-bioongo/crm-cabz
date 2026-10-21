@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { AjusteFiscal, Asignacion, Catalogo, Cfdi, CfdiMensual, CfdiMini, ContabMes, ContabilidadData, Cuenta, DeduccionAnual, Evento, FacturaExt, FacturacionData, GastoSinCfdi, GastosData, IbkrMes, Ingreso, IngresosData, InversionesData, Movimiento, NetWorth, Obligacion, Rubro, TipoCambio } from "./types";
+import type { AjusteFiscal, AkelaData, AkelaRealPlan, Asignacion, Catalogo, LibroAkela, PlanAkela, Cfdi, CfdiMensual, CfdiMini, ContabMes, ContabilidadData, Cuenta, DeduccionAnual, Evento, FacturaExt, FacturacionData, GastoSinCfdi, GastosData, IbkrMes, Ingreso, IngresosData, InversionesData, Movimiento, NetWorth, Obligacion, Rubro, TipoCambio } from "./types";
 
 const TIPOS_GASTO = ["gasto", "ahorro", "abono_deuda"];
 
@@ -197,5 +197,50 @@ export async function loadContabilidad(supabase: SupabaseClient, anio: number): 
     obligaciones: must<Record<string, unknown>[]>(ob, "obligaciones").map(num) as unknown as Obligacion[],
     rubros: must<Rubro[]>(rubros, "rubros"),
     uma: UMA_DIARIA,
+  };
+}
+
+export async function loadAkela(supabase: SupabaseClient, anio: number, rol: string | null): Promise<AkelaData> {
+  const desde = `${anio}-01-01`, hasta = `${anio}-12-31`;
+  const num = (r: Record<string, unknown>) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, typeof v === "string" && /^-?\d+(\.\d+)?$/.test(v) ? Number(v) : v]));
+  const [plan, rp, libro, cuentas, saldos, ibkr, ledger, tc, cfg, anios, rubros, pagadores] = await Promise.all([
+    supabase.from("v_plan_akela").select("*").eq("anio", anio).order("linea").order("mes"),
+    supabase.from("v_akela_real_vs_plan").select("*").eq("anio", anio),
+    supabase.from("v_libro_akela").select("*").gte("fecha", desde).lte("fecha", hasta).order("fecha"),
+    supabase.from("cuentas").select("id,nombre,tipo,moneda,pagadores!cuentas_titular_id_fkey(codigo)").eq("activa", true).in("tipo", ["inversion", "fondo"]),
+    supabase.from("v_saldo_actual").select("cuenta_id,fecha,saldo,fuente"),
+    supabase.from("ibkr_estados_mensuales").select("cuenta_id,periodo,nav_final").order("periodo", { ascending: false }).limit(50),
+    supabase.from("v_saldo_cuentas").select("id,saldo"),
+    supabase.from("tipos_cambio").select("fecha,tc_mxn").eq("moneda", "USD").order("fecha", { ascending: false }).limit(1),
+    supabase.from("app_config").select("akela_nac_papa,akela_nac_mama,akela_rend_real,akela_tc").maybeSingle(),
+    supabase.from("anios").select("anio").order("anio"),
+    supabase.from("rubros").select("id,nombre,padre_id").eq("activo", true),
+    supabase.from("pagadores").select("codigo,nombre").eq("activo", true),
+  ]);
+  type CRow = { id: string; nombre: string; tipo: string; moneda: string; pagadores: { codigo: string } | { codigo: string }[] | null };
+  const cs = must<CRow[]>(cuentas, "cuentas").map((c) => ({ ...c, titular: (Array.isArray(c.pagadores) ? c.pagadores[0]?.codigo : c.pagadores?.codigo) ?? "" })).filter((c) => c.titular !== "CABZ");
+  const sal = must<{ cuenta_id: string; fecha: string; saldo: number; fuente: string }[]>(saldos, "saldos");
+  const ib = must<{ cuenta_id: string; periodo: string; nav_final: number }[]>(ibkr, "ibkr");
+  const led = must<{ id: string; saldo: number }[]>(ledger, "saldos");
+  const fondo = cs.map((c) => {
+    if (c.tipo === "fondo") { const l = led.find((x) => x.id === c.id); return { nombre: c.nombre, saldo: Number(l?.saldo ?? 0), moneda: c.moneda, fecha: null, fuente: "depósitos − retiros registrados" }; }
+    const s = sal.find((x) => x.cuenta_id === c.id); const r = ib.find((x) => x.cuenta_id === c.id);
+    const finMes = r ? new Date(Date.UTC(+r.periodo.slice(0, 4), +r.periodo.slice(5, 7), 0)).toISOString().slice(0, 10) : null;
+    const usarIbkr = !!r && (!s || finMes! > s.fecha);
+    return { nombre: c.nombre.replace(/^IBKR /, ""), saldo: usarIbkr ? Number(r!.nav_final) : s ? Number(s.saldo) : 0, moneda: c.tipo === "inversion" ? "USD" : c.moneda, fecha: usarIbkr ? finMes : s?.fecha ?? null, fuente: usarIbkr ? "IBKR" : s?.fuente ?? null };
+  });
+  const rubrosAll = must<{ id: string; nombre: string; padre_id: string | null }[]>(rubros, "rubros");
+  const akelaId = rubrosAll.find((r) => !r.padre_id && r.nombre === "Akela")?.id;
+  const listaAnios = new Set<number>(must<{ anio: number }[]>(anios, "anios").map((a) => a.anio)); listaAnios.add(anio);
+  return {
+    anio, anios: [...listaAnios].sort(), rol,
+    plan: must<Record<string, unknown>[]>(plan, "plan").map(num) as unknown as PlanAkela[],
+    realPlan: must<Record<string, unknown>[]>(rp, "real").map(num) as unknown as AkelaRealPlan[],
+    libro: must<Record<string, unknown>[]>(libro, "libro").map(num) as unknown as LibroAkela[],
+    fondo,
+    tcHoy: Number(must<{ tc_mxn: number }[]>(tc, "tc")[0]?.tc_mxn ?? 18.5),
+    params: { nac_papa: Number(cfg.data?.akela_nac_papa ?? 1961), nac_mama: Number(cfg.data?.akela_nac_mama ?? 1962), rend_real: Number(cfg.data?.akela_rend_real ?? 0.04), tc: Number(cfg.data?.akela_tc ?? 18.5) },
+    rubrosAkela: rubrosAll.filter((r) => r.padre_id === akelaId).map((r) => ({ id: r.id, nombre: r.nombre })),
+    pagadores: must<Catalogo[]>(pagadores, "pagadores"),
   };
 }

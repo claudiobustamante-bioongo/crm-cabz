@@ -217,3 +217,21 @@ export interface ContabilidadData {
   rubros: Rubro[];
   uma: number;
 }
+
+/* ---------- Akela ---------- */
+export interface PlanAkela { id: string; anio: number; linea: string; rubro_id: string | null; pagador: string; es_transferencia: boolean; mes: number; monto: number; notas: string | null }
+export interface AkelaRealPlan { anio: number; mes: number; linea: string; rubro_id: string | null; plan: number; real: number; desviacion: number }
+export interface LibroAkela { fecha: string; mes: string; concepto: "aportacion" | "gasto"; descripcion: string | null; quien: string | null; rubro: string | null; entrada_mxn: number; salida_mxn: number }
+export interface AkelaData {
+  anio: number;
+  anios: number[];
+  rol: string | null;
+  plan: PlanAkela[];           // del año
+  realPlan: AkelaRealPlan[];   // del año
+  libro: LibroAkela[];         // del año: aportaciones y gastos Akela
+  fondo: { nombre: string; saldo: number; moneda: string; fecha: string | null; fuente: string | null }[];
+  tcHoy: number;
+  params: { nac_papa: number; nac_mama: number; rend_real: number; tc: number };
+  rubrosAkela: { id: string; nombre: string }[];
+  pagadores: Catalogo[];
+}
