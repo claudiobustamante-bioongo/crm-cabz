@@ -262,7 +262,7 @@ export async function loadAnaliticas(supabase: SupabaseClient): Promise<Analitic
   const desde = `${meses[0]}-01`; const anio = hoy.getFullYear();
   const num = (r: Record<string, unknown>) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, typeof v === "string" && /^-?\d+(\.\d+)?$/.test(v) ? Number(v) : v]));
   const [ing, gas, otros, fut, deu, ctas, led, sal, nw, nav, sh, tc, rub, plan, libro, fondo] = await Promise.all([
-    supabase.from("v_ingresos").select("mes,tipo,monto_mxn").eq("estado", "real").gte("fecha", desde).lte("fecha", hoyS).range(0, 9999),
+    supabase.from("v_ingresos").select("fecha,mes,tipo,monto_mxn").eq("estado", "real").gte("fecha", desde).lte("fecha", hoyS).range(0, 9999),
     supabase.from("v_asignaciones").select("mes,fecha,tipo,libro,grupo,rubro,rubro_codigo,monto_mxn").eq("tipo", "gasto").eq("estado", "real").eq("pagador", "CABZ").gte("fecha", desde).lte("fecha", hoyS).range(0, 19999),
     supabase.from("v_movimientos").select("mes,fecha,tipo,grupo,rubro,rubro_codigo,monto_mxn").in("tipo", ["ahorro", "abono_deuda"]).eq("estado", "real").gte("fecha", desde).lte("fecha", hoyS).range(0, 9999),
     supabase.from("v_movimientos").select("fecha,mes,estado,descripcion,grupo,monto_mxn,notas").eq("tipo", "gasto").in("estado", ["real", "presupuesto"]).gt("fecha", hoyS).order("fecha").range(0, 4999),
@@ -296,11 +296,12 @@ export async function loadAnaliticas(supabase: SupabaseClient): Promise<Analitic
   const planAnual = planRows.filter((p) => p.pagador === "CABZ").reduce((a, p) => a + Number(p.monto), 0);
   const planYtd = planRows.filter((p) => p.pagador === "CABZ").reduce((a, p) => a + (p.anual ? (Number(p.monto) * mesAct) / 12 : p.mes <= mesAct ? Number(p.monto) : 0), 0);
   const realYtd = ((libro.data ?? []) as { concepto: string; quien: string | null; salida_mxn: number }[]).filter((x) => x.concepto === "gasto" && x.quien === "CABZ").reduce((a, x) => a + Number(x.salida_mxn), 0);
+  const mesK = (r: Record<string, unknown>) => ({ ...r, mes: String(r.fecha ?? r.mes ?? "").slice(0, 7) });   // las vistas devuelven mes como date
   return {
     hoy: hoyS, meses,
-    ingresos: ((ing.data ?? []) as Record<string, unknown>[]).map(num) as unknown as AnaliticasData["ingresos"],
-    gastos: [...((gas.data ?? []) as Record<string, unknown>[]).map(num), ...((otros.data ?? []) as Record<string, unknown>[]).map(num).map((o) => ({ ...o, libro: "PERSONAL" }))].map((g) => { const x = g as unknown as Omit<AnaliticasData["gastos"][number], "clasificacion">; return { ...x, grupo: x.grupo ?? "Otros", rubro: x.rubro ?? "", rubro_codigo: x.rubro_codigo ?? "", clasificacion: clsDe(x.rubro_codigo ?? "") }; }),
-    futuros: ((fut.data ?? []) as Record<string, unknown>[]).map(num).map((f) => ({ ...f, libro: null })) as unknown as AnaliticasData["futuros"],
+    ingresos: ((ing.data ?? []) as Record<string, unknown>[]).map(num).map(mesK) as unknown as AnaliticasData["ingresos"],
+    gastos: [...((gas.data ?? []) as Record<string, unknown>[]).map(num).map(mesK), ...((otros.data ?? []) as Record<string, unknown>[]).map(num).map(mesK).map((o) => ({ ...o, libro: "PERSONAL" }))].map((g) => { const x = g as unknown as Omit<AnaliticasData["gastos"][number], "clasificacion">; return { ...x, grupo: x.grupo ?? "Otros", rubro: x.rubro ?? "", rubro_codigo: x.rubro_codigo ?? "", clasificacion: clsDe(x.rubro_codigo ?? "") }; }),
+    futuros: ((fut.data ?? []) as Record<string, unknown>[]).map(num).map(mesK).map((f) => ({ ...f, libro: null })) as unknown as AnaliticasData["futuros"],
     deudas: ((deu.data ?? []) as Record<string, unknown>[]).map(num) as unknown as AnaliticasData["deudas"],
     cuentas,
     netWorth: nw.data ? (num(nw.data as Record<string, unknown>) as unknown as NetWorth) : null,
