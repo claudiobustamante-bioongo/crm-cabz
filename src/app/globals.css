@@ -93,3 +93,5 @@ button.link{background:none;border:none;color:var(--gold-dark);font-weight:700;c
 .tbl-cols table{table-layout:fixed;min-width:1360px}.tbl-cols th:first-child,.tbl-cols td:first-child{width:200px}.tbl-cols th:last-child,.tbl-cols td:last-child{width:120px}
 /* tablas a todo lo ancho de la ventana (detalle de facturas) */
 .full-bleed{width:calc(100vw - 32px);margin-left:calc(50% - 50vw + 16px)}
+
+@media print{.tabs,.no-print,.idea,.toast{display:none!important}.card{box-shadow:none;border:1px solid #999;break-inside:avoid}body{background:#fff}h2{break-after:avoid}}

@@ -10,6 +10,7 @@ export const TABS = [
   { href: "/contabilidad", label: "Contabilidad", title: "Contabilidad · lo que necesita tu contador", ready: true },
   { href: "/akela", label: "Akela", title: "Familia Akela · presupuesto, aportaciones y fondo", ready: true },
   { href: "/analiticas", label: "Analíticas", title: "Analíticas · a dónde se va tu vida", ready: true },
+  { href: "/megalodon", label: "Megalodón", title: "Megalodón · protocolo en caso de fallecimiento", ready: true },
 ];
 
 export function Tabs({ permitidas, rol }: { permitidas?: string[]; rol?: string | null }) {
