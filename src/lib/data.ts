@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { AjusteFiscal, AkelaData, MovAkela, AkelaRealPlan, Asignacion, Catalogo, LibroAkela, PlanAkela, Cfdi, CfdiMensual, CfdiMini, ContabMes, ContabilidadData, Cuenta, DeduccionAnual, Evento, FacturaExt, FacturacionData, GastoSinCfdi, GastosData, IbkrMes, Ingreso, IngresosData, InversionesData, Movimiento, NetWorth, Obligacion, Rubro, TipoCambio } from "./types";
+import type { AjusteFiscal, AkelaData, AnaliticasData, MovAkela, AkelaRealPlan, Asignacion, Catalogo, LibroAkela, PlanAkela, Cfdi, CfdiMensual, CfdiMini, ContabMes, ContabilidadData, Cuenta, DeduccionAnual, Evento, FacturaExt, FacturacionData, GastoSinCfdi, GastosData, IbkrMes, Ingreso, IngresosData, InversionesData, Movimiento, NetWorth, Obligacion, Rubro, TipoCambio } from "./types";
 
 const TIPOS_GASTO = ["gasto", "ahorro", "abono_deuda"];
 
@@ -252,5 +252,61 @@ export async function loadAkela(supabase: SupabaseClient, anio: number, rol: str
     destinos: ((destinos.data ?? []) as { id: string; nombre: string; tipo: string }[]).filter((c) => !/Luis Miguel/i.test(c.nombre)),
     depLM: ((depLM.data ?? []) as Record<string, unknown>[]).map(num) as unknown as AkelaData["depLM"],
     pagadores: must<Catalogo[]>(pagadores, "pagadores"),
+  };
+}
+
+/* ---------- Analíticas: 24 meses de flujo, patrimonio, compromisos ---------- */
+export async function loadAnaliticas(supabase: SupabaseClient): Promise<AnaliticasData> {
+  const hoy = new Date(); const hoyS = hoy.toISOString().slice(0, 10);
+  const meses: string[] = []; for (let i = 23; i >= 0; i--) { const d = new Date(Date.UTC(hoy.getFullYear(), hoy.getMonth() - i, 1)); meses.push(d.toISOString().slice(0, 7)); }
+  const desde = `${meses[0]}-01`; const anio = hoy.getFullYear();
+  const num = (r: Record<string, unknown>) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, typeof v === "string" && /^-?\d+(\.\d+)?$/.test(v) ? Number(v) : v]));
+  const [ing, gas, otros, fut, deu, ctas, led, sal, nw, nav, sh, tc, rub, plan, libro, fondo] = await Promise.all([
+    supabase.from("v_ingresos").select("mes,tipo,monto_mxn").eq("estado", "real").gte("fecha", desde).lte("fecha", hoyS).range(0, 9999),
+    supabase.from("v_asignaciones").select("mes,fecha,tipo,libro,grupo,rubro,rubro_codigo,monto_mxn").eq("tipo", "gasto").eq("estado", "real").eq("pagador", "CABZ").gte("fecha", desde).lte("fecha", hoyS).range(0, 19999),
+    supabase.from("v_movimientos").select("mes,fecha,tipo,grupo,rubro,rubro_codigo,monto_mxn").in("tipo", ["ahorro", "abono_deuda"]).eq("estado", "real").gte("fecha", desde).lte("fecha", hoyS).range(0, 9999),
+    supabase.from("v_movimientos").select("fecha,mes,estado,descripcion,grupo,monto_mxn,notas").eq("tipo", "gasto").in("estado", ["real", "presupuesto"]).gt("fecha", hoyS).order("fecha").range(0, 4999),
+    supabase.from("v_deudas").select("deuda,moneda,saldo_actual,proximo_pago_fecha,proximo_pago_monto,pagos_restantes,fecha_liquidacion,tasa_anual"),
+    supabase.from("cuentas").select("id,nombre,tipo,moneda,pagadores!cuentas_titular_id_fkey(codigo,es_titular)").eq("activa", true),
+    supabase.from("v_saldo_cuentas").select("id,saldo,saldo_mxn"),
+    supabase.from("v_saldo_actual").select("cuenta_id,fecha,saldo"),
+    supabase.from("v_net_worth").select("*").maybeSingle(),
+    supabase.from("ibkr_estados_mensuales").select("cuenta_id,periodo,nav_final").gte("periodo", meses[0]).order("periodo"),
+    supabase.from("saldos_cuenta").select("cuenta_id,fecha,saldo").order("fecha"),
+    supabase.from("tipos_cambio").select("fecha,tc_mxn").eq("moneda", "USD").gte("fecha", `${anio - 3}-01-01`).order("fecha"),
+    supabase.from("rubros").select("id,codigo,nombre,padre_id,clasificacion"),
+    supabase.from("v_plan_akela").select("pagador,mes,monto,anual").eq("anio", anio),
+    supabase.from("v_libro_akela").select("mes,concepto,quien,salida_mxn").gte("fecha", `${anio}-01-01`),
+    supabase.from("v_saldo_cuentas").select("id,nombre,tipo,saldo_mxn").eq("tipo", "fondo"),
+  ]);
+  type CRow = { id: string; nombre: string; tipo: string; moneda: string; pagadores: { codigo: string; es_titular: boolean } | { codigo: string; es_titular: boolean }[] | null };
+  const mias = must<CRow[]>(ctas, "cuentas").filter((c) => { const p = Array.isArray(c.pagadores) ? c.pagadores[0] : c.pagadores; return p?.es_titular; });
+  const ledger = must<{ id: string; saldo: number; saldo_mxn: number }[]>(led, "saldos"), actual = must<{ cuenta_id: string; fecha: string; saldo: number }[]>(sal, "saldo_actual");
+  const tcs = must<{ fecha: string; tc_mxn: number }[]>(tc, "tc").map((t) => ({ fecha: t.fecha, tc_mxn: Number(t.tc_mxn) }));
+  const tcHoy = tcs[tcs.length - 1]?.tc_mxn ?? 18.5;
+  const rubros = must<{ id: string; codigo: string; nombre: string; padre_id: string | null; clasificacion: string | null }[]>(rub, "rubros");
+  const clsDe = (codigo: string) => { const r = rubros.find((x) => x.codigo === codigo); const p = r?.padre_id ? rubros.find((x) => x.id === r.padre_id) : null; return r?.clasificacion ?? p?.clasificacion ?? null; };
+  const cuentas = mias.map((c) => {
+    if (c.tipo === "inversion" || c.tipo === "retiro") { const s = actual.find((x) => x.cuenta_id === c.id); const v = s ? Number(s.saldo) : 0; return { id: c.id, nombre: c.nombre, tipo: c.tipo, moneda: c.moneda, saldo: v, saldo_mxn: c.moneda === "USD" ? v * tcHoy : v, fecha: s?.fecha ?? null }; }
+    const l = ledger.find((x) => x.id === c.id); return { id: c.id, nombre: c.nombre, tipo: c.tipo, moneda: c.moneda, saldo: Number(l?.saldo ?? 0), saldo_mxn: Number(l?.saldo_mxn ?? 0), fecha: null };
+  }).filter((c) => c.saldo_mxn !== 0 || c.tipo === "cheques");
+  const miasIds = new Set(mias.map((c) => c.id));
+  const planRows = (plan.data ?? []) as { pagador: string; mes: number; monto: number; anual: boolean }[];
+  const mesAct = hoy.getMonth() + 1;
+  const planAnual = planRows.filter((p) => p.pagador === "CABZ").reduce((a, p) => a + Number(p.monto), 0);
+  const planYtd = planRows.filter((p) => p.pagador === "CABZ").reduce((a, p) => a + (p.anual ? (Number(p.monto) * mesAct) / 12 : p.mes <= mesAct ? Number(p.monto) : 0), 0);
+  const realYtd = ((libro.data ?? []) as { concepto: string; quien: string | null; salida_mxn: number }[]).filter((x) => x.concepto === "gasto" && x.quien === "CABZ").reduce((a, x) => a + Number(x.salida_mxn), 0);
+  return {
+    hoy: hoyS, meses,
+    ingresos: ((ing.data ?? []) as Record<string, unknown>[]).map(num) as unknown as AnaliticasData["ingresos"],
+    gastos: [...((gas.data ?? []) as Record<string, unknown>[]).map(num), ...((otros.data ?? []) as Record<string, unknown>[]).map(num).map((o) => ({ ...o, libro: "PERSONAL" }))].map((g) => { const x = g as unknown as Omit<AnaliticasData["gastos"][number], "clasificacion">; return { ...x, grupo: x.grupo ?? "Otros", rubro: x.rubro ?? "", rubro_codigo: x.rubro_codigo ?? "", clasificacion: clsDe(x.rubro_codigo ?? "") }; }),
+    futuros: ((fut.data ?? []) as Record<string, unknown>[]).map(num).map((f) => ({ ...f, libro: null })) as unknown as AnaliticasData["futuros"],
+    deudas: ((deu.data ?? []) as Record<string, unknown>[]).map(num) as unknown as AnaliticasData["deudas"],
+    cuentas,
+    netWorth: nw.data ? (num(nw.data as Record<string, unknown>) as unknown as NetWorth) : null,
+    navHist: ((nav.data ?? []) as { cuenta_id: string; periodo: string; nav_final: number }[]).filter((r) => miasIds.has(r.cuenta_id)).map((r) => ({ ...r, nav_final: Number(r.nav_final) })),
+    saldosHist: ((sh.data ?? []) as { cuenta_id: string; fecha: string; saldo: number }[]).filter((r) => miasIds.has(r.cuenta_id)).map((r) => ({ ...r, saldo: Number(r.saldo) })),
+    tc: tcs,
+    akela: planAnual ? { plan_ytd: planYtd, real_ytd: realYtd, plan_anual: planAnual, fondo_mxn: ((fondo.data ?? []) as { saldo_mxn: number }[]).reduce((a, f) => a + Number(f.saldo_mxn), 0) } : null,
   };
 }

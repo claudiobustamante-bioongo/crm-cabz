@@ -241,3 +241,19 @@ export interface AkelaData {
   depLM: { id: string; fecha: string; monto_mxn: number; cuenta: string | null; cuenta_destino: string | null; descripcion: string | null }[];   // transferencias de Luis Miguel del año
   pagadores: Catalogo[];
 }
+
+/* ---------- Analíticas ---------- */
+export interface AnaliticasData {
+  hoy: string;
+  meses: string[];                       // últimos 24 meses (YYYY-MM), el último es el actual
+  ingresos: { mes: string; tipo: string; monto_mxn: number }[];
+  gastos: { mes: string; fecha: string; tipo: string; libro: string; grupo: string; rubro: string; rubro_codigo: string; monto_mxn: number; clasificacion: string | null }[];   // mi parte (pagador CABZ), reales
+  futuros: { fecha: string; mes: string; estado: string; descripcion: string | null; grupo: string | null; monto_mxn: number; notas: string | null; libro: string | null }[];   // gastos con fecha futura (MSI, presupuestos)
+  deudas: { deuda: string; moneda: string; saldo_actual: number; proximo_pago_fecha: string | null; proximo_pago_monto: number | null; pagos_restantes: number | null; fecha_liquidacion: string | null; tasa_anual: number | null }[];
+  cuentas: { id: string; nombre: string; tipo: string; moneda: string; saldo_mxn: number; saldo: number; fecha: string | null }[];   // mías, con saldo actual
+  netWorth: NetWorth | null;
+  navHist: { cuenta_id: string; periodo: string; nav_final: number }[];       // IBKR por mes (cuentas mías)
+  saldosHist: { cuenta_id: string; fecha: string; saldo: number }[];          // retiro (AFORE, PPR…)
+  tc: { fecha: string; tc_mxn: number }[];
+  akela: { plan_ytd: number; real_ytd: number; plan_anual: number; fondo_mxn: number } | null;
+}

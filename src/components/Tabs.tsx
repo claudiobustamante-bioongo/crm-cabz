@@ -9,7 +9,7 @@ export const TABS = [
   { href: "/facturacion", label: "Facturación", title: "Facturación · CFDI", ready: true },
   { href: "/contabilidad", label: "Contabilidad", title: "Contabilidad · lo que necesita tu contador", ready: true },
   { href: "/akela", label: "Akela", title: "Familia Akela · presupuesto, aportaciones y fondo", ready: true },
-  { href: "/analiticas", label: "Analíticas", title: "Analíticas · a dónde se va tu vida", ready: false },
+  { href: "/analiticas", label: "Analíticas", title: "Analíticas · a dónde se va tu vida", ready: true },
 ];
 
 export function Tabs({ permitidas, rol }: { permitidas?: string[]; rol?: string | null }) {
