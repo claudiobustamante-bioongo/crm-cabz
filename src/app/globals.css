@@ -95,3 +95,4 @@ button.link{background:none;border:none;color:var(--gold-dark);font-weight:700;c
 .full-bleed{width:calc(100vw - 32px);margin-left:calc(50% - 50vw + 16px)}
 
 @media print{.tabs,.no-print,.idea,.toast{display:none!important}.card{box-shadow:none;border:1px solid #999;break-inside:avoid}body{background:#fff}h2{break-after:avoid}}
+.flash{animation:flash 1.5s ease-out}@keyframes flash{0%{background:var(--cream)}100%{background:transparent}}

@@ -3,16 +3,20 @@ import { Fragment, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
 export interface MegSeccion { id: string; orden: number; clave: string; titulo: string; contenido: string; updated_at: string }
-export interface MegActivo { id: string; orden: number; categoria: string; nombre: string; institucion: string | null; numero: string | null; usuario: string | null; titular: string | null; beneficiarios: string | null; que_hacer: string | null; destino: string | null; contacto: string | null; liga: string | null; documento_path: string | null; notas: string | null; ultima_revision: string | null; updated_at: string }
-export interface MegalodonData { secciones: MegSeccion[]; activos: MegActivo[]; userId: string; listo: boolean }
+export interface MegActivo { id: string; orden: number; categoria: string; nombre: string; institucion: string | null; numero: string | null; usuario: string | null; titular: string | null; beneficiarios: string | null; que_hacer: string | null; destino: string | null; contacto: string | null; liga: string | null; documento_path: string | null; notas: string | null; ultima_revision: string | null; updated_at: string;
+  cuenta_id?: string | null; seccion_clave?: string | null; suma_asegurada?: string | null; prima?: string | null; vigencia_inicio?: string | null; vigencia_fin?: string | null; cobertura?: string | null }
+export interface MegCuenta { id: string; nombre: string; tipo: string; moneda: string; saldo: number; saldo_mxn: number; fecha: string | null }
+export interface MegalodonData { secciones: MegSeccion[]; activos: MegActivo[]; cuentas: MegCuenta[]; userId: string; listo: boolean; conSaldos: boolean }
 
 const CAT: Record<string, string> = { cuenta: "Cuentas e inversiones", seguro: "Seguros", propiedad: "Propiedades", empresa: "Empresas y participaciones", contacto: "Contactos clave", documento: "Documentos", otro: "Otros" };
 const CAT_ORDEN = ["cuenta", "seguro", "propiedad", "empresa", "contacto", "documento", "otro"];
 const CAMPOS: { k: keyof MegActivo; l: string; w?: number; multi?: boolean }[] = [
   { k: "institucion", l: "Institución" }, { k: "numero", l: "Número / contrato / póliza" }, { k: "usuario", l: "Usuario de acceso" }, { k: "titular", l: "Titular" },
   { k: "beneficiarios", l: "Beneficiarios" }, { k: "destino", l: "A quién va / a dónde se mueve" }, { k: "contacto", l: "Contacto" }, { k: "liga", l: "Liga (Drive, portal)" },
+  { k: "suma_asegurada", l: "Suma asegurada / cobertura" }, { k: "prima", l: "Prima" }, { k: "cobertura", l: "Condiciones clave", multi: true },
   { k: "que_hacer", l: "Qué hacer", multi: true }, { k: "notas", l: "Notas", multi: true },
 ];
+const fmtMx = (n: number) => "$" + Math.round(n).toLocaleString("es-MX");
 const linkify = (t: string) => t.split(/(https?:\/\/\S+)/g).map((p, i) => /^https?:\/\//.test(p) ? <a key={i} href={p} target="_blank" rel="noreferrer">{p}</a> : <Fragment key={i}>{p}</Fragment>);
 
 export function Megalodon({ initial }: { initial: MegalodonData }) {
@@ -70,6 +74,13 @@ export function Megalodon({ initial }: { initial: MegalodonData }) {
   const quitarDoc = async (a: MegActivo) => { if (!a.documento_path || !confirm("¿Quitar el archivo adjunto?")) return; await supabase.storage.from("documentos").remove([a.documento_path]); await guardarAct(a, { documento_path: null }); };
 
   const vis = acts.filter((a) => !filtro || JSON.stringify(a).toLowerCase().includes(filtro.toLowerCase()));
+  const cta = (a: MegActivo) => initial.cuentas.find((c) => c.id === a.cuenta_id) ?? null;
+  const saldoTxt = (a: MegActivo) => { const c = cta(a); if (!c) return null; return (c.moneda === "USD" ? `US$${Math.round(c.saldo).toLocaleString("en-US")} ≈ ` : "") + fmtMx(c.saldo_mxn) + (c.fecha ? ` (${c.fecha})` : ""); };
+  const ir = (id: string) => { const el = document.getElementById(id); if (el) { el.scrollIntoView({ behavior: "smooth", block: "start" }); el.classList.add("flash"); setTimeout(() => el.classList.remove("flash"), 1600); } };
+  const secDe = (a: MegActivo) => secs.find((x) => x.clave === a.seccion_clave) ?? null;
+  const hoyS = new Date().toISOString().slice(0, 10);
+  const vig = (a: MegActivo) => !a.vigencia_fin ? null : a.vigencia_fin < hoyS ? "vencida" : a.vigencia_fin < new Date(Date.now() + 60 * 864e5).toISOString().slice(0, 10) ? "vence pronto" : "vigente";
+  const totalCuentas = acts.reduce((t, a) => t + (cta(a)?.saldo_mxn ?? 0), 0);
   const pendientes = acts.filter((a) => /completar|capturar/i.test([a.institucion, a.numero, a.beneficiarios, a.contacto, a.notas, a.titular].join(" ")));
 
   if (!initial.listo) return <section><div className="idea"><b>Megalodón</b> Falta crear las tablas: corre <code>39_megalodon.sql</code> en Supabase y recarga.</div></section>;
@@ -89,12 +100,36 @@ export function Megalodon({ initial }: { initial: MegalodonData }) {
         {pendientes.length > 0 && <p className="hint">Por completar: {pendientes.map((a) => a.nombre).join(" · ")}.</p>}
       </div>
 
+      {/* ---------- consolidado ---------- */}
+      <div className="card">
+        <div className="ct"><span>Consolidado · dónde está todo</span><span className="tag">toca un renglón para ir a su ficha · «instrucción» abre el paso a paso</span></div>
+        <div className="tbl"><table style={{ fontSize: 12.5 }}>
+          <thead><tr><th>Elemento</th><th>Institución</th><th>Número / póliza</th><th className="n">Saldo o suma asegurada</th><th>Vigencia / beneficiarios</th><th>A quién va</th><th className="no-print">Instrucción</th></tr></thead>
+          <tbody>
+            {CAT_ORDEN.filter((c) => c !== "contacto" && acts.some((a) => a.categoria === c)).map((c) => (
+              <Fragment key={c}>
+                <tr className="sec"><td colSpan={7}>{CAT[c]}{c === "cuenta" && totalCuentas ? <span className="hint"> · saldos ligados {fmtMx(totalCuentas)}</span> : null}</td></tr>
+                {acts.filter((a) => a.categoria === c).sort((a, b) => a.orden - b.orden).map((a) => { const v = vig(a); const sec = secDe(a); return (
+                  <tr key={a.id} style={{ cursor: "pointer" }} onClick={() => ir("act-" + a.id)}>
+                    <td style={{ fontWeight: 600, color: "var(--ink)" }}>{a.nombre}{a.documento_path ? <span className="badge" style={{ marginLeft: 6 }}>doc</span> : null}</td>
+                    <td className="hint">{a.institucion ?? "·"}</td><td>{a.numero ?? "·"}</td>
+                    <td className="n">{saldoTxt(a) ?? a.suma_asegurada ?? "·"}</td>
+                    <td style={{ whiteSpace: "normal", maxWidth: 260 }}>{a.vigencia_fin ? <span className={v === "vencida" ? "neg" : v === "vence pronto" ? "" : "pos"} title={`${a.vigencia_inicio ?? ""} → ${a.vigencia_fin}`}>{v} · hasta {a.vigencia_fin}</span> : null}{a.vigencia_fin && a.beneficiarios ? " · " : ""}{a.beneficiarios ?? ""}</td>
+                    <td style={{ whiteSpace: "normal", maxWidth: 220 }}>{a.destino ?? "·"}</td>
+                    <td className="no-print">{sec ? <button className="link" type="button" onClick={(e) => { e.stopPropagation(); ir("sec-" + sec.id); }}>{sec.titulo.slice(0, 28)}{sec.titulo.length > 28 ? "…" : ""}</button> : <span className="hint">·</span>}</td>
+                  </tr>); })}
+              </Fragment>))}
+          </tbody>
+        </table></div>
+        {!initial.conSaldos && <p className="hint">Para ver saldos en vivo y datos de pólizas corre <code>40_megalodon_saldos.sql</code> (y tu 40b).</p>}
+      </div>
+
       {/* ---------- secciones de texto ---------- */}
       {secs.sort((a, b) => a.orden - b.orden).map((s, i) => (
         <Fragment key={s.id}>
           <h2>{i + 1} · {edit === s.id ? <input type="text" defaultValue={s.titulo} onBlur={(e) => e.target.value.trim() && e.target.value !== s.titulo && guardarSec(s, { titulo: e.target.value.trim() })} style={{ fontSize: "inherit", fontFamily: "inherit", width: "60%" }} /> : s.titulo}
             <span className="no-print" style={{ fontSize: 12, fontWeight: 400, marginLeft: 10 }}><button className="link" type="button" onClick={() => setEdit(edit === s.id ? null : s.id)}>{edit === s.id ? "listo" : "editar"}</button> {edit === s.id && <button className="del" type="button" onClick={() => borrarSec(s)}>✕</button>}</span></h2>
-          <div className="card">
+          <div className="card" id={"sec-" + s.id}>
             {edit === s.id
               ? <textarea defaultValue={s.contenido} rows={Math.max(6, s.contenido.split("\n").length + 2)} style={{ width: "100%", fontFamily: "inherit", fontSize: 14, lineHeight: 1.5, padding: 10 }} onBlur={(e) => e.target.value !== s.contenido && guardarSec(s, { contenido: e.target.value })} />
               : <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.55, fontSize: 14 }}>{s.contenido ? linkify(s.contenido) : <span className="hint">Vacío. Pulsa «editar».</span>}</div>}
@@ -109,7 +144,7 @@ export function Megalodon({ initial }: { initial: MegalodonData }) {
         <div key={c} className="card">
           <div className="ct"><span>{CAT[c]}</span><span className="no-print"><button className="link" type="button" onClick={() => nuevoAct(c)}>+ agregar</button></span></div>
           {vis.filter((a) => a.categoria === c).sort((a, b) => a.orden - b.orden).map((a) => (
-            <div key={a.id} style={{ borderTop: "1px solid var(--border-soft)", padding: "10px 0" }}>
+            <div key={a.id} id={"act-" + a.id} style={{ borderTop: "1px solid var(--border-soft)", padding: "10px 0", scrollMarginTop: 80 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
                 <b style={{ color: "var(--ink)", fontSize: 15 }}>{edit === a.id ? <input type="text" defaultValue={a.nombre} onBlur={(e) => e.target.value.trim() && e.target.value !== a.nombre && guardarAct(a, { nombre: e.target.value.trim() })} /> : a.nombre}{a.numero && edit !== a.id ? <span className="badge" style={{ marginLeft: 8 }}>{a.numero}</span> : null}</b>
                 <span className="no-print" style={{ fontSize: 12, display: "flex", gap: 8, alignItems: "center" }}>
@@ -125,6 +160,10 @@ export function Megalodon({ initial }: { initial: MegalodonData }) {
                   {CAMPOS.map((f) => <div key={f.k} style={f.multi ? { gridColumn: "span 2" } : undefined}><label>{f.l}</label>{f.multi
                     ? <textarea defaultValue={(a[f.k] as string) ?? ""} rows={3} style={{ width: "100%", fontFamily: "inherit", fontSize: 13 }} onBlur={(e) => e.target.value !== (a[f.k] ?? "") && guardarAct(a, { [f.k]: e.target.value || null })} />
                     : <input type="text" defaultValue={(a[f.k] as string) ?? ""} onBlur={(e) => e.target.value !== (a[f.k] ?? "") && guardarAct(a, { [f.k]: e.target.value || null })} />}</div>)}
+                  <div><label>Cuenta del CRM (saldo en vivo)</label><select value={a.cuenta_id ?? ""} onChange={(e) => guardarAct(a, { cuenta_id: e.target.value || null })}><option value="">— ninguna —</option>{initial.cuentas.map((c) => <option key={c.id} value={c.id}>{c.nombre} · {fmtMx(c.saldo_mxn)}</option>)}</select></div>
+                  <div><label>Instrucción (sección)</label><select value={a.seccion_clave ?? ""} onChange={(e) => guardarAct(a, { seccion_clave: e.target.value || null })}><option value="">— ninguna —</option>{secs.map((x) => <option key={x.clave} value={x.clave}>{x.titulo}</option>)}</select></div>
+                  <div><label>Vigencia desde</label><input type="date" value={a.vigencia_inicio ?? ""} onChange={(e) => guardarAct(a, { vigencia_inicio: e.target.value || null })} /></div>
+                  <div><label>Vigencia hasta</label><input type="date" value={a.vigencia_fin ?? ""} onChange={(e) => guardarAct(a, { vigencia_fin: e.target.value || null })} /></div>
                   <div><label>Última revisión</label><input type="date" value={a.ultima_revision ?? ""} onChange={(e) => guardarAct(a, { ultima_revision: e.target.value || null })} /></div>
                   <div style={{ gridColumn: "span 2" }}><label>Documento (se guarda aquí, cifrado en el sistema)</label>
                     <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -134,6 +173,9 @@ export function Megalodon({ initial }: { initial: MegalodonData }) {
                 </div>
               ) : (
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "4px 16px", marginTop: 6, fontSize: 13 }}>
+                  {saldoTxt(a) && <div><span className="hint">Saldo hoy: </span><b style={{ color: "var(--ink)" }}>{saldoTxt(a)}</b> <span className="hint">({cta(a)?.nombre})</span></div>}
+                  {a.vigencia_fin && <div><span className="hint">Vigencia: </span><span className={vig(a) === "vencida" ? "neg" : vig(a) === "vence pronto" ? "" : "pos"}>{a.vigencia_inicio ?? "?"} → {a.vigencia_fin} · {vig(a)}</span></div>}
+                  {secDe(a) && <div className="no-print"><span className="hint">Instrucción: </span><button className="link" type="button" onClick={() => ir("sec-" + secDe(a)!.id)}>{secDe(a)!.titulo}</button></div>}
                   {CAMPOS.filter((f) => a[f.k]).map((f) => <div key={f.k} style={f.multi ? { gridColumn: "1 / -1" } : undefined}><span className="hint">{f.l}: </span>{f.k === "liga" ? <a href={a.liga!} target="_blank" rel="noreferrer">{a.liga!.replace(/^https?:\/\//, "").slice(0, 60)}…</a> : <span style={{ whiteSpace: "pre-wrap" }}>{linkify(String(a[f.k]))}</span>}</div>)}
                   {a.documento_path && <div><span className="hint">Documento: </span><button className="link" type="button" onClick={() => abrir(a.documento_path!)}>abrir {a.documento_path.split("/").pop()?.replace(/^[0-9a-f-]{36}-/, "")}</button></div>}
                 </div>)}
