@@ -1,6 +1,7 @@
 "use client";
 import { Fragment, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { TablaFija } from "@/components/TablaFija";
 
 export interface MegSeccion { id: string; orden: number; clave: string; titulo: string; contenido: string; updated_at: string }
 export interface MegActivo { id: string; orden: number; categoria: string; nombre: string; institucion: string | null; numero: string | null; usuario: string | null; titular: string | null; beneficiarios: string | null; que_hacer: string | null; destino: string | null; contacto: string | null; liga: string | null; documento_path: string | null; notas: string | null; ultima_revision: string | null; updated_at: string;
@@ -103,24 +104,24 @@ export function Megalodon({ initial }: { initial: MegalodonData }) {
       {/* ---------- consolidado ---------- */}
       <div className="card">
         <div className="ct"><span>Consolidado · dónde está todo</span><span className="tag">toca un renglón para ir a su ficha · «instrucción» abre el paso a paso</span></div>
-        <div className="tbl"><table style={{ fontSize: 12.5 }}>
+        <TablaFija grupo="meg" alto="60vh"><table style={{ fontSize: 12.5 }}>
           <thead><tr><th>Elemento</th><th>Institución</th><th>Número / póliza</th><th className="n">Saldo o suma asegurada</th><th>Vigencia / beneficiarios</th><th>A quién va</th><th className="no-print">Instrucción</th></tr></thead>
           <tbody>
             {CAT_ORDEN.filter((c) => c !== "contacto" && acts.some((a) => a.categoria === c)).map((c) => (
               <Fragment key={c}>
-                <tr className="sec"><td colSpan={7}>{CAT[c]}{c === "cuenta" && totalCuentas ? <span className="hint"> · saldos ligados {fmtMx(totalCuentas)}</span> : null}</td></tr>
+                <tr className="sec"><td colSpan={7}>{CAT[c]}{c === "cuenta" && totalCuentas ? <> · saldos ligados <b style={{ fontSize: 15, color: "var(--ink)" }}>{fmtMx(totalCuentas)}</b></> : null}</td></tr>
                 {acts.filter((a) => a.categoria === c).sort((a, b) => a.orden - b.orden).map((a) => { const v = vig(a); const sec = secDe(a); return (
                   <tr key={a.id} style={{ cursor: "pointer" }} onClick={() => ir("act-" + a.id)}>
                     <td style={{ fontWeight: 600, color: "var(--ink)" }}>{a.nombre}{a.documento_path ? <span className="badge" style={{ marginLeft: 6 }}>doc</span> : null}</td>
                     <td className="hint">{a.institucion ?? "·"}</td><td>{a.numero ?? "·"}</td>
-                    <td className="n">{saldoTxt(a) ?? a.suma_asegurada ?? "·"}</td>
+                    <td className="n" style={{ whiteSpace: "normal", maxWidth: 260 }}>{saldoTxt(a) ? <b style={{ color: "var(--ink)", fontSize: 13.5 }}>{saldoTxt(a)}</b> : a.suma_asegurada ?? "·"}</td>
                     <td style={{ whiteSpace: "normal", maxWidth: 260 }}>{a.vigencia_fin ? <span className={v === "vencida" ? "neg" : v === "vence pronto" ? "" : "pos"} title={`${a.vigencia_inicio ?? ""} → ${a.vigencia_fin}`}>{v} · hasta {a.vigencia_fin}</span> : null}{a.vigencia_fin && a.beneficiarios ? " · " : ""}{a.beneficiarios ?? ""}</td>
                     <td style={{ whiteSpace: "normal", maxWidth: 220 }}>{a.destino ?? "·"}</td>
                     <td className="no-print">{sec ? <button className="link" type="button" onClick={(e) => { e.stopPropagation(); ir("sec-" + sec.id); }}>{sec.titulo.slice(0, 28)}{sec.titulo.length > 28 ? "…" : ""}</button> : <span className="hint">·</span>}</td>
                   </tr>); })}
               </Fragment>))}
           </tbody>
-        </table></div>
+        </table></TablaFija>
         {!initial.conSaldos && <p className="hint">Para ver saldos en vivo y datos de pólizas corre <code>40_megalodon_saldos.sql</code> (y tu 40b).</p>}
       </div>
 
@@ -146,7 +147,7 @@ export function Megalodon({ initial }: { initial: MegalodonData }) {
           {vis.filter((a) => a.categoria === c).sort((a, b) => a.orden - b.orden).map((a) => (
             <div key={a.id} id={"act-" + a.id} style={{ borderTop: "1px solid var(--border-soft)", padding: "10px 0", scrollMarginTop: 80 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-                <b style={{ color: "var(--ink)", fontSize: 15 }}>{edit === a.id ? <input type="text" defaultValue={a.nombre} onBlur={(e) => e.target.value.trim() && e.target.value !== a.nombre && guardarAct(a, { nombre: e.target.value.trim() })} /> : a.nombre}{a.numero && edit !== a.id ? <span className="badge" style={{ marginLeft: 8 }}>{a.numero}</span> : null}</b>
+                <b style={{ color: "var(--ink)", fontSize: 15 }}>{edit === a.id ? <input type="text" defaultValue={a.nombre} onBlur={(e) => e.target.value.trim() && e.target.value !== a.nombre && guardarAct(a, { nombre: e.target.value.trim() })} /> : a.nombre}{a.numero && edit !== a.id ? <span className="badge" style={{ marginLeft: 8 }}>{a.numero}</span> : null}{edit !== a.id && (saldoTxt(a) || a.suma_asegurada) ? <span style={{ marginLeft: 10, fontSize: 16, fontFamily: "Fraunces, serif", fontWeight: 900 }}>{saldoTxt(a) ?? a.suma_asegurada}</span> : null}</b>
                 <span className="no-print" style={{ fontSize: 12, display: "flex", gap: 8, alignItems: "center" }}>
                   <span className="hint">revisado {a.ultima_revision ?? "—"}</span>
                   <button className="link" type="button" onClick={() => revisado(a)} title="Marcar como revisado hoy">✓ revisado</button>
