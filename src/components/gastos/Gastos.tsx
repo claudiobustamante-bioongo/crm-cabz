@@ -98,7 +98,7 @@ export function Gastos({ initial }: { initial: GastosData }) {
   /* cierre de saldos: fija el saldo real de cheques y tarjetas a una fecha; desde ahí el CRM suma solo lo nuevo */
   const CierreSaldos = () => {
     const [abierto, setAbierto] = useState(false);
-    const [fecha, setFecha] = useState(hoy());
+    const [fecha, setFecha] = useState(() => { const d = new Date(hoy()); d.setDate(d.getDate() - 1); return d.toISOString().slice(0, 10); });   // ayer: el saldo es al cierre de ese día
     const [vals, setVals] = useState<Record<string, string>>({});
     const guardar = async () => {
       const cambios = initial.saldos.filter((c) => vals[c.id] !== undefined && vals[c.id] !== "");
@@ -111,7 +111,7 @@ export function Gastos({ initial }: { initial: GastosData }) {
       <div className="card" style={{ padding: abierto ? undefined : "8px 14px" }}>
         <div className="ct" style={{ marginBottom: abierto ? undefined : 0 }}><span>Cierre de saldos · cheques y tarjetas</span><button className="link" type="button" onClick={() => setAbierto(!abierto)}>{abierto ? "cerrar" : "fijar saldos reales"}</button></div>
         {abierto && <>
-          <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 6 }}><div><label style={{ margin: "0 0 2px" }}>Saldos al día</label><input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} /></div><span className="hint">Escribe solo los que quieras fijar. Tarjetas: lo que debes hoy (positivo; 0 si ya la pagaste).</span></div>
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 6 }}><div><label style={{ margin: "0 0 2px" }}>Saldo al cierre del día</label><input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} /></div><span className="hint">El saldo es al terminar ese día: lo fechado ese día ya está incluido; lo fechado después se suma o resta. Si el saldo es de hoy antes de registrar los gastos de hoy, usa la fecha de ayer. Tarjetas: lo que debes (positivo; 0 si ya la pagaste).</span></div>
           <div className="tbl"><table style={{ fontSize: 12.5 }}>
             <thead><tr><th>Cuenta</th><th className="n">Según el CRM</th><th className="n">Saldo real</th><th>Último cierre</th></tr></thead>
             <tbody>{initial.saldos.map((c) => <tr key={c.id}><td>{c.nombre} <span className="hint">{c.tipo === "tarjeta_credito" ? "tarjeta" : c.moneda}</span></td><td className={"n" + (c.saldo < 0 ? " neg" : "")}>{fmt(c.saldo)}</td><td className="n"><input type="number" placeholder={c.tipo === "tarjeta_credito" ? "deuda" : "saldo"} value={vals[c.id] ?? ""} onChange={(e) => setVals({ ...vals, [c.id]: e.target.value })} style={{ width: 120, textAlign: "right" }} /></td><td className="hint">{c.fecha_saldo_inicial ?? "—"}</td></tr>)}</tbody>
