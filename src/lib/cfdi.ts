@@ -10,7 +10,7 @@ export interface CfdiParsed {
   uso_cfdi: string | null;
   concepto: string | null;
   conceptos: { descripcion: string; clave: string | null; importe: number }[];
-  subtotal: number; descuento: number; iva: number; ret_isr: number; ret_iva: number; total: number;
+  subtotal: number; descuento: number; iva: number; ret_isr: number; ret_iva: number; otros_impuestos: number; total: number;
   moneda: string; tc: number | null;
   forma_pago: string | null; metodo_pago: string | null;
 }
@@ -30,16 +30,19 @@ export function parseCfdi(xml: string, rfcPropio: string | null): CfdiParsed {
 
   // Impuestos a nivel comprobante (no los de cada concepto, que van anidados bajo Concepto)
   const compImp = Array.from(comp.children).find((e) => e.localName === "Impuestos");
-  let iva = 0, ret_isr = 0, ret_iva = 0;
+  let iva = 0, ret_isr = 0, ret_iva = 0, otros = 0;
   if (compImp) {
     Array.from(compImp.getElementsByTagName("*")).forEach((e) => {
       if (e.localName === "Traslado" && e.getAttribute("Impuesto") === "002") iva += num(e.getAttribute("Importe"));
+      if (e.localName === "Traslado" && e.getAttribute("Impuesto") === "003") otros += num(e.getAttribute("Importe"));   // IEPS
       if (e.localName === "Retencion") {
         if (e.getAttribute("Impuesto") === "001") ret_isr += num(e.getAttribute("Importe"));
         if (e.getAttribute("Impuesto") === "002") ret_iva += num(e.getAttribute("Importe"));
       }
     });
   }
+  // impuestos locales (complemento implocal): ISH de hoteles, etc.
+  all.forEach((e) => { if (e.localName === "TrasladosLocales") otros += num(e.getAttribute("Importe")); if (e.localName === "RetencionesLocales") otros -= num(e.getAttribute("Importe")); });
   const tipoC = comp.getAttribute("TipoDeComprobante") ?? "I";
   const emisorRfc = (emisor?.getAttribute("Rfc") ?? "").toUpperCase();
   const receptorRfc = (receptor?.getAttribute("Rfc") ?? "").toUpperCase();
@@ -64,7 +67,7 @@ export function parseCfdi(xml: string, rfcPropio: string | null): CfdiParsed {
     concepto: conceptos.slice(0, 2).map((c) => c.descripcion).join(" · ") || null,
     conceptos,
     subtotal: num(comp.getAttribute("SubTotal")), descuento: num(comp.getAttribute("Descuento")),
-    iva, ret_isr, ret_iva, total: num(comp.getAttribute("Total")),
+    iva, ret_isr, ret_iva, otros_impuestos: Math.round(otros * 100) / 100, total: num(comp.getAttribute("Total")),
     moneda: comp.getAttribute("Moneda") ?? "MXN", tc: comp.getAttribute("TipoCambio") ? num(comp.getAttribute("TipoCambio")) : null,
     forma_pago: comp.getAttribute("FormaPago"), metodo_pago: comp.getAttribute("MetodoPago"),
   };

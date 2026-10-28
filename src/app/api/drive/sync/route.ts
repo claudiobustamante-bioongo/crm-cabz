@@ -60,7 +60,7 @@ async function sync(db: SupabaseClient, userId: string, rfc: string | null) {
       const { error: e3 } = await db.from("cfdi").insert({
         user_id: userId, uuid: p.uuid, tipo: p.tipo, tipo_comprobante: p.tipo_comprobante, fecha: p.fecha, serie: p.serie, folio: p.folio,
         emisor_rfc: p.emisor_rfc, emisor_nombre: p.emisor_nombre, receptor_rfc: p.receptor_rfc, receptor_nombre: p.receptor_nombre,
-        concepto: p.concepto, conceptos: p.conceptos, uso_cfdi: p.uso_cfdi, subtotal: p.subtotal, descuento: p.descuento, iva: p.iva, ret_isr: p.ret_isr, ret_iva: p.ret_iva, total: p.total,
+        concepto: p.concepto, conceptos: p.conceptos, uso_cfdi: p.uso_cfdi, subtotal: p.subtotal, descuento: p.descuento, iva: p.iva, ret_isr: p.ret_isr, ret_iva: p.ret_iva, otros_impuestos: p.otros_impuestos, total: p.total,
         moneda: p.moneda, tc: p.tc, forma_pago: p.forma_pago, metodo_pago: p.metodo_pago, xml_documento_id: dx.id, link_drive: file.webViewLink ?? null,
         estado: p.tipo === "recibida" ? "nueva" : "sin_gasto", confianza: "alta (XML)", notas: `Drive: ${path}`,
       });

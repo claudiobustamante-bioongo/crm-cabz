@@ -28,9 +28,12 @@ export function parseCfdiServer(xml: string, rfcPropio: string | null): CfdiPars
   const emisorRfc = String(emisor?.["@Rfc"] ?? "").toUpperCase(), receptorRfc = String(receptor?.["@Rfc"] ?? "").toUpperCase();
   const tipo: CfdiParsed["tipo"] = tipoC === "N" ? "nomina" : rfcPropio && emisorRfc === rfcPropio.toUpperCase() ? "emitida" : "recibida";
 
-  let iva = 0, ret_isr = 0, ret_iva = 0;
+  let iva = 0, ret_isr = 0, ret_iva = 0, otros = 0;
   const imp = comp.Impuestos as N | undefined;        // impuestos a nivel comprobante (los de Concepto están anidados aparte)
-  arr<N>((imp?.Traslados as N | undefined)?.Traslado as never).forEach((t) => { if (t["@Impuesto"] === "002") iva += num(t["@Importe"]); });
+  arr<N>((imp?.Traslados as N | undefined)?.Traslado as never).forEach((t) => { if (t["@Impuesto"] === "002") iva += num(t["@Importe"]); if (t["@Impuesto"] === "003") otros += num(t["@Importe"]); });
+  // impuestos locales (implocal): ISH de hoteles, etc.
+  const walk = (o: unknown): void => { if (!o || typeof o !== "object") return; Object.entries(o as Record<string, unknown>).forEach(([k, v]) => { const loc = k.replace(/^.*:/, ""); if (loc === "TrasladosLocales") arr<N>(v as never).forEach((t) => { otros += num(t["@Importe"]); }); else if (loc === "RetencionesLocales") arr<N>(v as never).forEach((t) => { otros -= num(t["@Importe"]); }); else if (typeof v === "object") walk(v); }); };
+  walk(comp);
   arr<N>((imp?.Retenciones as N | undefined)?.Retencion as never).forEach((t) => { if (t["@Impuesto"] === "001") ret_isr += num(t["@Importe"]); if (t["@Impuesto"] === "002") ret_iva += num(t["@Importe"]); });
   const conceptos: CfdiParsed["conceptos"] = arr<N>((comp.Conceptos as N | undefined)?.Concepto as never).map((c) => ({ descripcion: String(c["@Descripcion"] ?? ""), clave: (c["@ClaveProdServ"] as string | null) ?? null, importe: num(c["@Importe"]) }));
   if (tipoC === "N") {
@@ -43,7 +46,7 @@ export function parseCfdiServer(xml: string, rfcPropio: string | null): CfdiPars
     serie: (comp["@Serie"] as string) ?? null, folio: (comp["@Folio"] as string) ?? null,
     emisor_rfc: emisorRfc, emisor_nombre: (emisor?.["@Nombre"] as string) ?? null, receptor_rfc: receptorRfc, receptor_nombre: (receptor?.["@Nombre"] as string) ?? null,
     uso_cfdi: (receptor?.["@UsoCFDI"] as string) ?? null, concepto: conceptos.slice(0, 2).map((c) => c.descripcion).join(" · ") || null, conceptos,
-    subtotal: num(comp["@SubTotal"]), descuento: num(comp["@Descuento"]), iva, ret_isr, ret_iva, total: num(comp["@Total"]),
+    subtotal: num(comp["@SubTotal"]), descuento: num(comp["@Descuento"]), iva, ret_isr, ret_iva, otros_impuestos: Math.round(otros * 100) / 100, total: num(comp["@Total"]),
     moneda: String(comp["@Moneda"] ?? "MXN"), tc: comp["@TipoCambio"] != null ? num(comp["@TipoCambio"]) : null,
     forma_pago: (comp["@FormaPago"] as string) ?? null, metodo_pago: (comp["@MetodoPago"] as string) ?? null,
   };
