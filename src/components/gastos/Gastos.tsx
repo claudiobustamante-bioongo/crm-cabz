@@ -26,6 +26,31 @@ export function Gastos({ initial }: { initial: GastosData }) {
   const [selCat, setSelCat] = useState("");
 
   const aviso = (t: string) => { setToast(t); setTimeout(() => setToast(""), 3500); };
+  /* cierre de saldos: fija el saldo real de cheques y tarjetas a una fecha; desde ahí el CRM suma solo lo nuevo */
+  const CierreSaldos = () => {
+    const [abierto, setAbierto] = useState(false);
+    const [fecha, setFecha] = useState(hoy());
+    const [vals, setVals] = useState<Record<string, string>>({});
+    const guardar = async () => {
+      const cambios = initial.saldos.filter((c) => vals[c.id] !== undefined && vals[c.id] !== "");
+      if (!cambios.length) return aviso("Escribe al menos un saldo.");
+      setBusy(true);
+      for (const c of cambios) { const v = Number(vals[c.id]); const saldo = c.tipo === "tarjeta_credito" ? -Math.abs(v) : v; const { error } = await supabase.from("cuentas").update({ saldo_inicial: saldo, fecha_saldo_inicial: fecha }).eq("id", c.id); if (error) { setBusy(false); return aviso("No se guardó: " + error.message); } }
+      setBusy(false); aviso(`Saldos fijados al ${fecha}. Lo registrado después de esa fecha se suma; lo anterior ya no mueve el saldo.`); router.refresh(); setVals({}); setAbierto(false);
+    };
+    return (
+      <div className="card" style={{ padding: abierto ? undefined : "8px 14px" }}>
+        <div className="ct" style={{ marginBottom: abierto ? undefined : 0 }}><span>Cierre de saldos · cheques y tarjetas</span><button className="link" type="button" onClick={() => setAbierto(!abierto)}>{abierto ? "cerrar" : "fijar saldos reales"}</button></div>
+        {abierto && <>
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 6 }}><div><label style={{ margin: "0 0 2px" }}>Saldos al día</label><input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} /></div><span className="hint">Escribe solo los que quieras fijar. Tarjetas: lo que debes hoy (positivo; 0 si ya la pagaste).</span></div>
+          <div className="tbl"><table style={{ fontSize: 12.5 }}>
+            <thead><tr><th>Cuenta</th><th className="n">Según el CRM</th><th className="n">Saldo real</th><th>Último cierre</th></tr></thead>
+            <tbody>{initial.saldos.map((c) => <tr key={c.id}><td>{c.nombre} <span className="hint">{c.tipo === "tarjeta_credito" ? "tarjeta" : c.moneda}</span></td><td className={"n" + (c.saldo < 0 ? " neg" : "")}>{fmt(c.saldo)}</td><td className="n"><input type="number" placeholder={c.tipo === "tarjeta_credito" ? "deuda" : "saldo"} value={vals[c.id] ?? ""} onChange={(e) => setVals({ ...vals, [c.id]: e.target.value })} style={{ width: 120, textAlign: "right" }} /></td><td className="hint">{c.fecha_saldo_inicial ?? "—"}</td></tr>)}</tbody>
+          </table></div>
+          <div className="center" style={{ marginTop: 6 }}><button className="btn sm" type="button" disabled={busy} onClick={guardar}>Fijar saldos</button></div>
+        </>}
+      </div>);
+  };
   /* pago de tarjeta = transferencia cheques → tarjeta (los gastos ya están cargados a la tarjeta; aquí no se duplica nada) */
   const PagoTarjeta = () => {
     const tarjetas = initial.cuentas.filter((c) => c.tipo === "tarjeta_credito"), origenes = initial.cuentas.filter((c) => c.tipo === "cheques");
@@ -214,6 +239,7 @@ export function Gastos({ initial }: { initial: GastosData }) {
 
       <Formulario rubros={rubros} cuentas={initial.cuentas} libros={initial.libros} pagadores={initial.pagadores} eventos={initial.eventos} busy={busy} onAgregar={agregar} onNuevoRubro={nuevoRubro} />
       <PagoTarjeta />
+      <CierreSaldos />
 
       <h2>Tu mes en números</h2>
       <div className="g3" style={{ marginBottom: 6 }}>

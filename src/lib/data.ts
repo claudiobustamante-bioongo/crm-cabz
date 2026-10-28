@@ -10,7 +10,7 @@ function must<T>(r: { data: T | null; error: { message: string } | null }, what:
 
 export async function loadGastos(supabase: SupabaseClient, anio: number): Promise<GastosData> {
   const desde = `${anio}-01-01`, hasta = `${anio}-12-31`;
-  const [rubros, cuentas, libros, pagadores, eventos, movimientos, anios, sinLigar, ligadas] = await Promise.all([
+  const [rubros, cuentas, libros, pagadores, eventos, movimientos, anios, sinLigar, ligadas, saldosV, fechasV] = await Promise.all([
     supabase.from("rubros").select("id,codigo,nombre,padre_id,clasificacion,emoji,activo")
       .eq("naturaleza", "gasto").eq("activo", true).order("orden").order("nombre"),
     supabase.from("cuentas").select("id,nombre,tipo,es_medio_pago").eq("activa", true).order("nombre"),
@@ -24,6 +24,8 @@ export async function loadGastos(supabase: SupabaseClient, anio: number): Promis
     supabase.from("anios").select("anio").order("anio"),
     supabase.from("v_cfdi").select("uuid,fecha,emisor_nombre,total_mxn,concepto").eq("tipo", "recibida").in("tipo_comprobante", ["I"]).is("movimiento_id", null).gte("fecha", desde).lte("fecha", hasta).order("fecha", { ascending: false }).range(0, 1999),
     supabase.from("cfdi").select("movimiento_id").not("movimiento_id", "is", null).range(0, 9999),
+    supabase.from("v_saldo_cuentas").select("id,nombre,tipo,moneda,saldo").in("tipo", ["cheques", "tarjeta_credito"]),
+    supabase.from("cuentas").select("id,fecha_saldo_inicial").in("tipo", ["cheques", "tarjeta_credito"]),
   ]);
 
   const movs = must<Movimiento[]>(movimientos, "movimientos");
@@ -49,6 +51,7 @@ export async function loadGastos(supabase: SupabaseClient, anio: number): Promis
     movimientos: movs,
     asignaciones,
     cfdisSinLigar: must<Record<string, unknown>[]>(sinLigar, "cfdi").map((c) => ({ ...c, total_mxn: Number(c.total_mxn) })) as unknown as CfdiMini[],
+    saldos: ((saldosV.data ?? []) as { id: string; nombre: string; tipo: string; moneda: string; saldo: number }[]).map((x) => ({ ...x, saldo: Number(x.saldo), fecha_saldo_inicial: ((fechasV.data ?? []) as { id: string; fecha_saldo_inicial: string | null }[]).find((f) => f.id === x.id)?.fecha_saldo_inicial ?? null })).sort((a, b) => a.tipo.localeCompare(b.tipo) || a.nombre.localeCompare(b.nombre)),
     facturasPorMov: ((ligadas.data ?? []) as { movimiento_id: string }[]).reduce<Record<string, number>>((a, r) => { a[r.movimiento_id] = (a[r.movimiento_id] ?? 0) + 1; return a; }, {}),
   };
 }
