@@ -46,7 +46,7 @@ export function Ingresos({ initial }: { initial: IngresosData }) {
   const elegirTipo = (t: TipoIngreso) => {
     setTipo(t); setMsg("");
     if (t === "sueldo") { setMonto(String(ultSueldo || "")); setNota("Nómina Cordada"); setCuenta("Cheques"); }
-    else if (t === "bono") { setMonto(String(ultSueldo * 2 || "")); setNota("Bono anual (2 meses de sueldo)"); setCuenta("Cheques"); }
+    else if (t === "bono") { setMonto(String(Math.round((ultSueldo / 30) * 15) || "")); setNota("Aguinaldo (15 días)"); setCuenta("Cheques"); }
     else if (t === "comision") { setMonto(""); setNota("Asesoría"); setCuenta("Cheques"); }
     else if (t === "aportacion_akela") { setMonto(""); setNota("Depósito al fondo"); }
     else if (t === "reembolso") { setMonto(""); setNota("Cordada · viáticos"); setCuenta("Cheques"); }
@@ -172,7 +172,11 @@ export function Ingresos({ initial }: { initial: IngresosData }) {
         <div className="g3">
           {tipo !== "comision" && (
             <div><label htmlFor="i-monto">{tipo === "aportacion_akela" ? "Monto depositado" : "Monto neto recibido"}</label>
-              <input id="i-monto" type="number" inputMode="decimal" step="0.01" value={monto} onChange={(e) => setMonto(e.target.value)} onKeyDown={(e) => e.key === "Enter" && agregar()} /></div>
+              <input id="i-monto" type="number" inputMode="decimal" step="0.01" value={monto} onChange={(e) => setMonto(e.target.value)} onKeyDown={(e) => e.key === "Enter" && agregar()} />
+              {tipo === "bono" && <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4 }}>
+                {[{ l: "Aguinaldo · 15 días", m: (ultSueldo / 30) * 15, n: "Aguinaldo (15 días)" }, { l: "Prima vacacional · 25 % de 20 días", m: (ultSueldo / 30) * 20 * 0.25, n: "Prima vacacional (20 días × 25 %)" }, { l: "Bono · 2 meses", m: ultSueldo * 2, n: "Bono anual (2 meses de sueldo)" }].map((x) => (
+                  <button key={x.l} type="button" className="pill" aria-pressed={nota === x.n} onClick={() => { setMonto(String(Math.round(x.m))); setNota(x.n); }} style={{ fontSize: 11 }}>{x.l} ≈ {fmt(x.m)}</button>))}
+                <span className="hint" style={{ fontSize: 11 }}>estimado sobre tu último sueldo neto; ajusta al neto real cuando llegue</span></div>}</div>
           )}
           {tipo === "comision" && (
             <div><label htmlFor="i-cli">Cliente <span className="h">(opcional)</span></label><input id="i-cli" type="text" value={cliente} onChange={(e) => setCliente(e.target.value)} /></div>
