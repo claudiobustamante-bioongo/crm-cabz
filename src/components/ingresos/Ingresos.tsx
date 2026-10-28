@@ -138,7 +138,6 @@ export function Ingresos({ initial }: { initial: IngresosData }) {
   const bw = (W - P.l - P.r) / 12, y = (v: number) => P.t + (H - P.t - P.b) * (1 - v / max);
   const grid: number[] = []; for (let v = 0; v <= max; v += step) grid.push(v);
 
-  let acum = 0;
 
   return (
     <section>
@@ -241,28 +240,32 @@ export function Ingresos({ initial }: { initial: IngresosData }) {
       </div>
 
       <div className="card">
-        <div className="ct"><span>Liquidez mes a mes</span><span className="tag">entradas − salidas · acumulado del año</span></div>
-        <div className="tbl"><table>
-          <thead><tr><th>Mes</th><th className="n">Entradas</th><th className="n">Salidas</th><th className="n">Queda</th><th className="n">Acumulado</th><th className="n">% del ingreso</th></tr></thead>
-          <tbody>
-            {by.map((b, i) => {
-              const k = `${initial.anio}-${String(i + 1).padStart(2, "0")}`;
-              const ent = b[0] + b[1], sal = b[2], q = ent - sal;
-              if (!ent && !sal) return null;
-              acum += q;
-              return (
-                <tr key={k} style={proyMes[i] ? { opacity: 0.6 } : undefined}>
-                  <td>{ml(k)}{proyMes[i] && <> <span className="badge" style={{ background: "var(--gray-soft)" }}>proy.</span></>}</td>
-                  <td className="n pos">{fmt(ent)}</td><td className="n neg">{fmt(sal)}</td>
-                  <td className={"n " + (q < 0 ? "neg" : "pos")} style={{ fontWeight: 700 }}>{fmt(q)}</td>
-                  <td className={"n " + (acum < 0 ? "neg" : "")}>{fmt(acum)}</td>
-                  <td className="n">{ent ? Math.round((q / ent) * 100) : 0}%</td>
-                </tr>
-              );
-            })}
-            <tr className="tot"><td>Año</td><td className="n">{fmt(by.reduce((a, b) => a + b[0] + b[1], 0))}</td><td className="n">{fmt(by.reduce((a, b) => a + b[2], 0))}</td><td className="n">{fmt(by.reduce((a, b) => a + b[0] + b[1] - b[2], 0))}</td><td /><td className="n">{(() => { const e = by.reduce((a, b) => a + b[0] + b[1], 0); return e ? Math.round((by.reduce((a, b) => a + b[0] + b[1] - b[2], 0) / e) * 100) : 0; })()}%</td></tr>
-          </tbody>
-        </table></div>
+        <div className="ct"><span>Liquidez mes a mes · caja</span><span className="tag">saldo inicio + entradas − salidas realizadas − salidas proyectadas = saldo fin</span></div>
+        {(() => {
+          const mesHoy = initial.hoy.slice(0, 7); const esteAnio = mesHoy.startsWith(String(initial.anio));
+          const idxHoy = esteAnio ? +mesHoy.slice(5, 7) - 1 : mesHoy > `${initial.anio}-12` ? 12 : -1;
+          // flujos por mes: entradas (reales + proyectadas), salidas realizadas, salidas proyectadas (presupuesto restante)
+          const filas = by.map((b, i) => { const k = `${initial.anio}-${String(i + 1).padStart(2, "0")}`; const ent = b[0] + b[1], salR = b[2]; const salP = i > idxHoy ? (initial.pptoMes[k] ?? 0) : i === idxHoy ? initial.pptoRestanteHoy : 0; return { k, i, ent, salR, salP }; });
+          // ancla: el saldo en cheques hoy es el saldo del mes en curso a la fecha; hacia atrás se reconstruye con los flujos
+          let saldoIni: number[] = Array(12).fill(0);
+          if (idxHoy >= 0 && idxHoy < 12) { let s0 = initial.cheques - filas[idxHoy].ent + filas[idxHoy].salR; saldoIni[idxHoy] = s0; for (let i = idxHoy - 1; i >= 0; i--) { s0 = s0 - filas[i].ent + filas[i].salR; saldoIni[i] = s0; } let s1 = initial.cheques - filas[idxHoy].salP; for (let i = idxHoy + 1; i < 12; i++) { saldoIni[i] = s1; s1 = s1 + filas[i].ent - filas[i].salR - filas[i].salP; } }
+          else { saldoIni = filas.reduce<number[]>((acc, f, i) => { acc[i] = i ? acc[i - 1] + filas[i - 1].ent - filas[i - 1].salR - filas[i - 1].salP : 0; return acc; }, []); }
+          return (
+            <div className="tbl"><table>
+              <thead><tr><th>Mes</th><th className="n">Saldo inicio</th><th className="n">+ Entradas</th><th className="n">− Salidas realizadas</th><th className="n">− Salidas proyectadas</th><th className="n">Saldo fin</th><th className="n">% del ingreso</th></tr></thead>
+              <tbody>
+                {filas.map((f) => { if (!f.ent && !f.salR && !f.salP && f.i !== idxHoy) return null; const fin = saldoIni[f.i] + f.ent - f.salR - f.salP; const hoyRow = f.i === idxHoy; return (
+                  <tr key={f.k} style={f.i > idxHoy ? { opacity: 0.6 } : undefined}>
+                    <td>{ml(f.k)}{hoyRow && <> <span className="badge" style={{ background: "var(--nec)" }}>en curso</span></>}{f.i > idxHoy && <> <span className="badge" style={{ background: "var(--gray-soft)" }}>proy.</span></>}</td>
+                    <td className={"n" + (saldoIni[f.i] < 0 ? " neg" : "")}>{fmt(saldoIni[f.i])}</td>
+                    <td className="n pos">{f.ent ? fmt(f.ent) : "·"}</td><td className="n neg">{f.salR ? fmt(f.salR) : "·"}</td><td className="n" style={{ color: "var(--gray-soft)" }}>{f.salP ? fmt(f.salP) : "·"}</td>
+                    <td className={"n " + (fin < 0 ? "neg" : "pos")} style={{ fontWeight: 700 }}>{fmt(fin)}{hoyRow && <div className="hint" style={{ fontWeight: 400, fontSize: 11 }}>hoy {fmt(initial.cheques)}</div>}</td>
+                    <td className="n">{f.ent ? Math.round(((f.ent - f.salR - f.salP) / f.ent) * 100) : 0}%</td>
+                  </tr>); })}
+                <tr className="tot"><td>Año</td><td /><td className="n">{fmt(filas.reduce((a, f) => a + f.ent, 0))}</td><td className="n">{fmt(filas.reduce((a, f) => a + f.salR, 0))}</td><td className="n">{fmt(filas.reduce((a, f) => a + f.salP, 0))}</td><td className="n">{fmt(saldoIni[11] + filas[11].ent - filas[11].salR - filas[11].salP)}</td><td className="n">{(() => { const e = filas.reduce((a, f) => a + f.ent, 0); return e ? Math.round(((e - filas.reduce((a, f) => a + f.salR + f.salP, 0)) / e) * 100) : 0; })()}%</td></tr>
+              </tbody>
+            </table></div>); })()}
+        <p className="hint">Saldo inicio/fin = caja en cheques. El mes en curso parte del saldo real de hoy ({fmt(initial.cheques)}); hacia atrás se reconstruye con entradas − salidas (aproximado si hubo pagos de tarjeta registrados como gasto), hacia adelante usa las entradas proyectadas y el presupuesto de «Caja del mes» (en el mes en curso, solo lo que falta por gastar). Salidas realizadas incluyen Akela, ahorro y deuda.</p>
       </div>
 
       <div className="g2">

@@ -62,7 +62,8 @@ export async function loadGastos(supabase: SupabaseClient, anio: number): Promis
 
 export async function loadIngresos(supabase: SupabaseClient, anio: number): Promise<IngresosData> {
   const desde = `${anio}-01-01`, hasta = `${anio}-12-31`;
-  const [cuentas, pagadores, ingresos, salidas, anios, cfg, libres, { data: { user } }] = await Promise.all([
+  const hoyS = new Date().toLocaleDateString("sv-SE", { timeZone: "America/Mexico_City" }); const mesHoy = hoyS.slice(0, 7);
+  const [cuentas, pagadores, ingresos, salidas, anios, cfg, libres, { data: { user } }, chq, pptos, gastosHoy] = await Promise.all([
     supabase.from("cuentas").select("id,nombre,tipo,es_medio_pago").eq("activa", true).order("nombre"),
     supabase.from("pagadores").select("codigo,nombre").eq("activo", true),
     supabase.from("v_ingresos").select("*").gte("fecha", desde).lte("fecha", hasta).order("fecha", { ascending: false }).range(0, 4999),
@@ -72,7 +73,15 @@ export async function loadIngresos(supabase: SupabaseClient, anio: number): Prom
     supabase.from("app_config").select("rfc_propio").maybeSingle(),
     supabase.from("v_cfdi").select("uuid,fecha,tipo,tipo_comprobante,emisor_nombre,receptor_nombre,total,ret_isr,subtotal,iva,ret_iva,movimiento_id").in("tipo", ["nomina", "emitida"]).is("movimiento_id", null).gte("fecha", desde).lte("fecha", hasta).order("fecha"),
     supabase.auth.getUser(),
+    supabase.from("v_saldo_cuentas").select("saldo_mxn,moneda").eq("tipo", "cheques"),
+    supabase.from("presupuestos").select("mes,rubro_id,monto").gte("mes", desde).lte("mes", hasta),
+    supabase.from("v_movimientos").select("rubro_id,monto_mxn").eq("tipo", "gasto").eq("estado", "real").gte("fecha", `${mesHoy}-01`).lte("fecha", hoyS).range(0, 4999),
   ]);
+  const pptoMes: Record<string, number> = {}; const pptoRubroHoy: Record<string, number> = {};
+  ((pptos.data ?? []) as { mes: string; rubro_id: string; monto: number }[]).forEach((p) => { const k = String(p.mes).slice(0, 7); pptoMes[k] = (pptoMes[k] ?? 0) + Number(p.monto); if (k === mesHoy) pptoRubroHoy[p.rubro_id] = (pptoRubroHoy[p.rubro_id] ?? 0) + Number(p.monto); });
+  const realRubroHoy: Record<string, number> = {};
+  ((gastosHoy.data ?? []) as { rubro_id: string | null; monto_mxn: number }[]).forEach((g) => { if (g.rubro_id) realRubroHoy[g.rubro_id] = (realRubroHoy[g.rubro_id] ?? 0) + Number(g.monto_mxn); });
+  const pptoRestanteHoy = Object.entries(pptoRubroHoy).reduce((a, [r, v]) => a + Math.max(0, v - (realRubroHoy[r] ?? 0)), 0);
   const porMes: Record<string, number> = {};
   must<{ fecha: string; monto_mxn: number }[]>(salidas, "salidas").forEach((s) => {
     const k = s.fecha.slice(0, 7); porMes[k] = (porMes[k] ?? 0) + Number(s.monto_mxn);
@@ -86,6 +95,8 @@ export async function loadIngresos(supabase: SupabaseClient, anio: number): Prom
     ingresos: must<Ingreso[]>(ingresos, "ingresos"),
     salidas: Object.entries(porMes).map(([mes, total]) => ({ mes, total })).sort((a, b) => a.mes.localeCompare(b.mes)),
     rfcPropio: cfg.data?.rfc_propio ?? null, userId: user?.id ?? "",
+    cheques: ((chq.data ?? []) as { saldo_mxn: number; moneda: string }[]).filter((c) => c.moneda === "MXN").reduce((a, c) => a + Number(c.saldo_mxn), 0),
+    hoy: hoyS, pptoMes, pptoRestanteHoy,
     cfdisLibres: ((libres.data ?? []) as Record<string, unknown>[]).map((c) => Object.fromEntries(Object.entries(c).map(([k, v]) => [k, typeof v === "string" && /^-?\d+(\.\d+)?$/.test(v) ? Number(v) : v]))) as unknown as CfdiIngreso[],
   };
 }

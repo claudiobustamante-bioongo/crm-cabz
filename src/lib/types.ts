@@ -122,6 +122,10 @@ export interface IngresosData {
   rfcPropio: string | null;
   userId: string;
   cfdisLibres: CfdiIngreso[];   // nómina / emitidas del año sin ligar a un ingreso
+  cheques: number;              // saldo en cheques (MXN) hoy
+  hoy: string;
+  pptoMes: Record<string, number>;        // presupuesto total por mes (YYYY-MM) del año
+  pptoRestanteHoy: number;                // del mes en curso: suma por rubro de max(presupuesto − real, 0)
 }
 
 /** Fila de ibkr_estados_mensuales (importes USD). */
