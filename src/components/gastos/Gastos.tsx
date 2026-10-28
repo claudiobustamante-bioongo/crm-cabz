@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { Asignacion, CfdiMini, Clasificacion, GastosData, Movimiento, Rubro } from "@/lib/types";
 import { Buscador } from "@/components/Buscador";
-import { CLS_COLOR, CLS_LABEL, color, cuentaColor, fmt, mesKey, ml, slug } from "@/lib/format";
+import { CLS_COLOR, CLS_LABEL, color, cuentaColor, fmt, hoy, mesKey, ml, slug } from "@/lib/format";
 import { Formulario, type NuevoGasto } from "./Formulario";
 import { BarrasMes, Dona } from "./Graficas";
 
@@ -26,6 +26,32 @@ export function Gastos({ initial }: { initial: GastosData }) {
   const [selCat, setSelCat] = useState("");
 
   const aviso = (t: string) => { setToast(t); setTimeout(() => setToast(""), 3500); };
+  /* pago de tarjeta = transferencia cheques → tarjeta (los gastos ya están cargados a la tarjeta; aquí no se duplica nada) */
+  const PagoTarjeta = () => {
+    const tarjetas = initial.cuentas.filter((c) => c.tipo === "tarjeta_credito"), origenes = initial.cuentas.filter((c) => c.tipo === "cheques");
+    const [f, setF] = useState({ fecha: hoy(), desde: origenes.find((c) => /cheques/i.test(c.nombre))?.id ?? origenes[0]?.id ?? "", tarjeta: tarjetas[0]?.id ?? "", monto: "", abierto: false });
+    if (!tarjetas.length) return null;
+    const pagar = async () => {
+      const m = Number(f.monto); if (!(m > 0)) return aviso("Monto del pago.");
+      setBusy(true);
+      const { error } = await supabase.rpc("registrar_movimiento", { p: { fecha: f.fecha, tipo: "transferencia", cuenta_id: f.desde, cuenta_destino_id: f.tarjeta, monto: m, moneda: "MXN", descripcion: `Pago ${tarjetas.find((t) => t.id === f.tarjeta)?.nombre ?? "tarjeta"}` } });
+      setBusy(false);
+      if (error) return aviso("No se registró: " + error.message);
+      aviso(`Pago de ${fmt(m)} a ${tarjetas.find((t) => t.id === f.tarjeta)?.nombre}: baja Cheques y sube la tarjeta; no cuenta como gasto.`); setF({ ...f, monto: "", abierto: false }); router.refresh();
+    };
+    return (
+      <div className="card" style={{ padding: f.abierto ? undefined : "8px 14px" }}>
+        <div className="ct" style={{ marginBottom: f.abierto ? undefined : 0 }}><span>Pagar tarjeta</span><button className="link" type="button" onClick={() => setF({ ...f, abierto: !f.abierto })}>{f.abierto ? "cerrar" : "registrar pago"}</button></div>
+        {f.abierto && <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
+          <div><label style={{ margin: "0 0 2px" }}>Fecha</label><input type="date" value={f.fecha} onChange={(e) => setF({ ...f, fecha: e.target.value })} /></div>
+          <div><label style={{ margin: "0 0 2px" }}>Desde</label><select value={f.desde} onChange={(e) => setF({ ...f, desde: e.target.value })}>{origenes.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}</select></div>
+          <div><label style={{ margin: "0 0 2px" }}>Tarjeta</label><select value={f.tarjeta} onChange={(e) => setF({ ...f, tarjeta: e.target.value })}>{tarjetas.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}</select></div>
+          <div><label style={{ margin: "0 0 2px" }}>Monto</label><input type="number" value={f.monto} onChange={(e) => setF({ ...f, monto: e.target.value })} style={{ width: 130 }} onKeyDown={(e) => e.key === "Enter" && pagar()} /></div>
+          <button className="btn sm" type="button" disabled={busy} onClick={pagar}>Pagar</button>
+          <span className="hint" style={{ flexBasis: "100%" }}>Es una transferencia Cheques → tarjeta: los gastos ya se registraron cuando se cargaron a la tarjeta, así que el pago no se cuenta otra vez.</span>
+        </div>}
+      </div>);
+  };
   const clsDe = (grupo: string) => rubros.find((r) => !r.padre_id && r.nombre === grupo)?.clasificacion ?? "G";
   const asigDe = (id: string) => asigs.filter((a) => a.movimiento_id === id);
 
@@ -187,6 +213,7 @@ export function Gastos({ initial }: { initial: GastosData }) {
       <div className="idea"><b>Cómo funciona</b>Eliges <em>rubro</em> y <em>subrubro</em>, dices con qué pagaste y cuánto. Abajo el mes se reordena: cuánto llevas, porcentaje por rubro, y cada movimiento con su etiqueta. {initial.anio}: {reales.length} movimientos reales cargados.</div>
 
       <Formulario rubros={rubros} cuentas={initial.cuentas} libros={initial.libros} pagadores={initial.pagadores} eventos={initial.eventos} busy={busy} onAgregar={agregar} onNuevoRubro={nuevoRubro} />
+      <PagoTarjeta />
 
       <h2>Tu mes en números</h2>
       <div className="g3" style={{ marginBottom: 6 }}>
