@@ -2,7 +2,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import type { Asignacion, CfdiMini, Clasificacion, GastosData, Movimiento, Rubro } from "@/lib/types";
+import type { Asignacion, CfdiMini, Clasificacion, GastosData, Movimiento, Presupuesto, Rubro } from "@/lib/types";
 import { Buscador } from "@/components/Buscador";
 import { CLS_COLOR, CLS_LABEL, color, cuentaColor, fmt, hoy, mesKey, ml, slug } from "@/lib/format";
 import { Formulario, type NuevoGasto } from "./Formulario";
@@ -26,6 +26,75 @@ export function Gastos({ initial }: { initial: GastosData }) {
   const [selCat, setSelCat] = useState("");
 
   const aviso = (t: string) => { setToast(t); setTimeout(() => setToast(""), 3500); };
+  /* caja del mes: saldo en cheques + lo que falta por entrar − lo que falta por gastar (presupuesto − real) → cómo cierra el mes */
+  const [pptos, setPptos] = useState<Presupuesto[]>(initial.presupuestos);
+  const CajaMes = () => {
+    const mesHoy = hoy().slice(0, 7);
+    const [mes, setMes] = useState(() => { const sig = new Date(); sig.setDate(1); const k = sig.toISOString().slice(0, 7); return k.startsWith(String(initial.anio)) ? k : `${initial.anio}-01`; });
+    const [abierto, setAbierto] = useState(true);
+    const [add, setAdd] = useState({ rubro_id: "", monto: "" });
+    const [libro, setLibro] = useState("PERSONAL");
+    const efectivo = initial.saldos.filter((c) => c.tipo === "cheques" && c.moneda === "MXN").reduce((a, c) => a + c.saldo, 0);
+    const tarjetasDeuda = -initial.saldos.filter((c) => c.tipo === "tarjeta_credito").reduce((a, c) => a + Math.min(0, c.saldo), 0);
+    const ingM = initial.ingresosMes.filter((i) => i.mes === mes); const entradasReal = ingM.filter((i) => !i.proyectado).reduce((a, i) => a + i.monto_mxn, 0), entradasProy = ingM.filter((i) => i.proyectado).reduce((a, i) => a + i.monto_mxn, 0);
+    const realMes = (rid: string) => movs.filter((m) => m.estado === "real" && m.tipo === "gasto" && m.rubro_id === rid && mesKey(m.fecha) === mes).reduce((a, m) => a + m.monto_mxn, 0);
+    const realTotalMes = movs.filter((m) => m.estado === "real" && ["gasto", "abono_deuda", "ahorro"].includes(m.tipo) && mesKey(m.fecha) === mes).reduce((a, m) => a + m.monto_mxn, 0);
+    const lineas = pptos.filter((p) => p.mes === mes).map((p) => { const r = rubros.find((x) => x.id === p.rubro_id); const g = r?.padre_id ? rubros.find((x) => x.id === r.padre_id) : null; const real = realMes(p.rubro_id); return { ...p, nombre: r?.nombre ?? "?", grupo: g?.nombre ?? r?.nombre ?? "?", real, resta: Math.max(0, p.monto - real) }; }).sort((a, b) => a.grupo.localeCompare(b.grupo, "es") || b.monto - a.monto);
+    const pptoTotal = lineas.reduce((a, l) => a + l.monto, 0), restaTotal = lineas.reduce((a, l) => a + l.resta, 0), realEnPpto = lineas.reduce((a, l) => a + l.real, 0);
+    const sinPpto = realTotalMes - realEnPpto;   // gastos del mes en rubros que no están presupuestados
+    const esActualOFuturo = mes >= mesHoy;
+    const cierre = esActualOFuturo ? efectivo + entradasProy - restaTotal : null;
+    const guardarPpto = async (p: Presupuesto, monto: number) => { const { error } = await supabase.from("presupuestos").update({ monto }).eq("id", p.id); if (error) return aviso(error.message); setPptos((prev) => prev.map((x) => x.id === p.id ? { ...x, monto } : x)); };
+    const borrarPpto = async (p: Presupuesto) => { const { error } = await supabase.from("presupuestos").delete().eq("id", p.id); if (error) return aviso(error.message); setPptos((prev) => prev.filter((x) => x.id !== p.id)); };
+    const agregarPpto = async () => {
+      const monto = Number(add.monto); if (!add.rubro_id || !(monto >= 0)) return aviso("Rubro y monto.");
+      const { data: lb } = await supabase.from("libros").select("id").eq("codigo", libro).single(); const { data: pg } = await supabase.from("pagadores").select("id").eq("codigo", "CABZ").single();
+      const { data, error } = await supabase.from("presupuestos").upsert({ mes: `${mes}-01`, libro_id: lb?.id, rubro_id: add.rubro_id, pagador_id: pg?.id, monto }, { onConflict: "user_id,mes,libro_id,rubro_id,pagador_id" }).select("id,mes,rubro_id,monto,notas").single();
+      if (error) return aviso(error.message);
+      setPptos((prev) => [...prev.filter((x) => x.id !== data.id), { id: data.id, mes, rubro_id: add.rubro_id, monto, notas: null, libro }]); setAdd({ rubro_id: "", monto: "" });
+    };
+    const copiarDe = async (origen: string) => {
+      const src = pptos.filter((p) => p.mes === origen); if (!src.length) return aviso(`No hay presupuesto en ${ml(origen)}.`);
+      if (!confirm(`Copiar ${src.length} líneas de ${ml(origen)} a ${ml(mes)}? (no borra lo que ya tengas)`)) return;
+      setBusy(true); const { data: pg } = await supabase.from("pagadores").select("id").eq("codigo", "CABZ").single(); const { data: lbs } = await supabase.from("libros").select("id,codigo") as { data: { id: string; codigo: string }[] | null };
+      for (const p of src) { if (pptos.some((x) => x.mes === mes && x.rubro_id === p.rubro_id && x.libro === p.libro)) continue; const { data } = await supabase.from("presupuestos").upsert({ mes: `${mes}-01`, libro_id: lbs?.find((l) => l.codigo === p.libro)?.id, rubro_id: p.rubro_id, pagador_id: pg?.id, monto: p.monto }, { onConflict: "user_id,mes,libro_id,rubro_id,pagador_id" }).select("id").single(); if (data) setPptos((prev) => [...prev, { ...p, id: data.id, mes }]); }
+      setBusy(false); aviso("Copiado.");
+    };
+    const mesesOpc = Array.from({ length: 12 }, (_, i) => `${initial.anio}-${String(i + 1).padStart(2, "0")}`);
+    const otros = [...new Set(pptos.map((p) => p.mes))].filter((m) => m !== mes).sort().reverse();
+    return (
+      <div className="card">
+        <div className="ct"><span>Caja del mes · ¿cómo cierro?</span><span style={{ display: "flex", gap: 8, alignItems: "center" }}><select value={mes} onChange={(e) => setMes(e.target.value)}>{mesesOpc.map((k) => <option key={k} value={k}>{ml(k)}</option>)}</select><button className="link" type="button" onClick={() => setAbierto(!abierto)}>{abierto ? "ocultar detalle" : "ver detalle"}</button></span></div>
+        <div className="stat-row">
+          <div className="stat"><div className="v">{fmt(efectivo)}</div><div className="l">En cheques hoy{tarjetasDeuda ? ` · tarjetas por pagar ${fmt(tarjetasDeuda)}` : ""}</div></div>
+          <div className="stat"><div className="v pos">{fmt(entradasReal + entradasProy)}</div><div className="l">Entradas del mes · {fmt(entradasReal)} ya entraron{entradasProy ? ` · ${fmt(entradasProy)} por entrar` : ""}</div></div>
+          <div className="stat"><div className="v">{fmt(pptoTotal)}</div><div className="l">Gastos esperados · ya gastado {fmt(realEnPpto)}{sinPpto > 0 ? ` (+${fmt(sinPpto)} fuera de presupuesto)` : ""} · falta {fmt(restaTotal)}</div></div>
+          <div className="stat"><div className={"v " + (cierre == null ? "" : cierre >= 0 ? "pos" : "neg")}>{cierre == null ? "—" : fmt(cierre)}</div><div className="l">{cierre == null ? "Mes cerrado" : cierre >= 0 ? "Cierre estimado: te sobra" : "Cierre estimado: te falta"} · cheques + por entrar − por gastar</div></div>
+        </div>
+        {abierto && <>
+          <div className="tbl"><table style={{ fontSize: 12.5 }}>
+            <thead><tr><th>Rubro</th><th>Concepto</th><th className="n">Esperado</th><th className="n">Real</th><th className="n">Falta</th><th style={{ width: 120 }}>Avance</th><th></th></tr></thead>
+            <tbody>
+              {lineas.map((l) => <tr key={l.id}><td className="hint">{l.grupo}</td><td style={{ fontWeight: 600, color: "var(--ink)" }}>{l.nombre}{l.libro !== "PERSONAL" ? <span className="badge" style={{ marginLeft: 6 }}>{l.libro}</span> : null}</td>
+                <td className="n"><input type="number" defaultValue={l.monto || ""} onBlur={(e) => Number(e.target.value) !== l.monto && guardarPpto(l, Number(e.target.value) || 0)} style={{ width: 96, textAlign: "right", padding: "2px 4px" }} /></td>
+                <td className={"n" + (l.real > l.monto && l.monto ? " neg" : "")}>{l.real ? fmt(l.real) : "·"}</td><td className="n">{l.resta ? fmt(l.resta) : "✓"}</td>
+                <td><div style={{ height: 10, border: "1px solid var(--ink)", borderRadius: 5, background: "var(--cream)", overflow: "hidden" }}><div style={{ width: `${l.monto ? Math.min(100, (l.real / l.monto) * 100) : 0}%`, height: "100%", background: l.real > l.monto ? "var(--deu)" : "var(--aho)" }} /></div></td>
+                <td><button className="del" type="button" onClick={() => borrarPpto(l)}>✕</button></td></tr>)}
+              {!lineas.length && <tr><td colSpan={7} className="hint">Sin presupuesto para {ml(mes)}. Agrega líneas abajo o copia de otro mes.</td></tr>}
+              <tr className="tot"><td colSpan={2}>Total</td><td className="n">{fmt(pptoTotal)}</td><td className="n">{fmt(realEnPpto)}</td><td className="n">{fmt(restaTotal)}</td><td colSpan={2} /></tr>
+            </tbody>
+          </table></div>
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", marginTop: 8 }}>
+            <div><label style={{ margin: "0 0 2px" }}>Agregar rubro</label><select value={add.rubro_id} onChange={(e) => setAdd({ ...add, rubro_id: e.target.value })}><option value="">—</option>{rubros.filter((r) => !r.padre_id).map((g) => <optgroup key={g.id} label={g.nombre}>{rubros.filter((r) => r.padre_id === g.id).map((r) => <option key={r.id} value={r.id}>{r.nombre}</option>)}</optgroup>)}</select></div>
+            <div><label style={{ margin: "0 0 2px" }}>Libro</label><select value={libro} onChange={(e) => setLibro(e.target.value)}>{initial.libros.map((l) => <option key={l.codigo} value={l.codigo}>{l.codigo}</option>)}</select></div>
+            <div><label style={{ margin: "0 0 2px" }}>Esperado</label><input type="number" value={add.monto} onChange={(e) => setAdd({ ...add, monto: e.target.value })} style={{ width: 110 }} onKeyDown={(e) => e.key === "Enter" && agregarPpto()} /></div>
+            <button className="btn sm" type="button" onClick={agregarPpto} disabled={busy}>+</button>
+            {otros.length > 0 && <span style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center", fontSize: 12 }}>copiar de <select onChange={(e) => { if (e.target.value) copiarDe(e.target.value); e.target.value = ""; }} defaultValue=""><option value="">mes…</option>{otros.map((m) => <option key={m} value={m}>{ml(m)}</option>)}</select></span>}
+          </div>
+          <p className="hint">Esperado = lo que piensas gastar en el mes por rubro; Real = lo registrado (cualquier cuenta); Falta = lo que aún no sale. El cierre asume que lo que falta se paga este mes desde cheques (los cargos a tarjeta se pagan al corte).</p>
+        </>}
+      </div>);
+  };
   /* cierre de saldos: fija el saldo real de cheques y tarjetas a una fecha; desde ahí el CRM suma solo lo nuevo */
   const CierreSaldos = () => {
     const [abierto, setAbierto] = useState(false);
@@ -238,6 +307,7 @@ export function Gastos({ initial }: { initial: GastosData }) {
       <div className="idea"><b>Cómo funciona</b>Eliges <em>rubro</em> y <em>subrubro</em>, dices con qué pagaste y cuánto. Abajo el mes se reordena: cuánto llevas, porcentaje por rubro, y cada movimiento con su etiqueta. {initial.anio}: {reales.length} movimientos reales cargados.</div>
 
       <Formulario rubros={rubros} cuentas={initial.cuentas} libros={initial.libros} pagadores={initial.pagadores} eventos={initial.eventos} busy={busy} onAgregar={agregar} onNuevoRubro={nuevoRubro} />
+      <CajaMes />
       <PagoTarjeta />
       <CierreSaldos />
 
