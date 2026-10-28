@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { AjusteFiscal, AkelaData, AnaliticasData, MovAkela, AkelaRealPlan, Asignacion, Catalogo, LibroAkela, PlanAkela, Cfdi, CfdiMensual, CfdiMini, ContabMes, ContabilidadData, Cuenta, DeduccionAnual, Evento, FacturaExt, FacturacionData, GastoSinCfdi, GastosData, IbkrMes, Ingreso, IngresosData, InversionesData, Movimiento, NetWorth, Obligacion, Rubro, TipoCambio } from "./types";
+import type { AjusteFiscal, AkelaData, AnaliticasData, CfdiIngreso, MovAkela, AkelaRealPlan, Asignacion, Catalogo, LibroAkela, PlanAkela, Cfdi, CfdiMensual, CfdiMini, ContabMes, ContabilidadData, Cuenta, DeduccionAnual, Evento, FacturaExt, FacturacionData, GastoSinCfdi, GastosData, IbkrMes, Ingreso, IngresosData, InversionesData, Movimiento, NetWorth, Obligacion, Rubro, TipoCambio } from "./types";
 
 const TIPOS_GASTO = ["gasto", "ahorro", "abono_deuda"];
 
@@ -55,13 +55,16 @@ export async function loadGastos(supabase: SupabaseClient, anio: number): Promis
 
 export async function loadIngresos(supabase: SupabaseClient, anio: number): Promise<IngresosData> {
   const desde = `${anio}-01-01`, hasta = `${anio}-12-31`;
-  const [cuentas, pagadores, ingresos, salidas, anios] = await Promise.all([
+  const [cuentas, pagadores, ingresos, salidas, anios, cfg, libres, { data: { user } }] = await Promise.all([
     supabase.from("cuentas").select("id,nombre,tipo,es_medio_pago").eq("activa", true).order("nombre"),
     supabase.from("pagadores").select("codigo,nombre").eq("activo", true),
     supabase.from("v_ingresos").select("*").gte("fecha", desde).lte("fecha", hasta).order("fecha", { ascending: false }).range(0, 4999),
     supabase.from("v_movimientos").select("fecha,monto_mxn").in("tipo", TIPOS_GASTO).eq("estado", "real")
       .gte("fecha", desde).lte("fecha", hasta).range(0, 19999),
     supabase.from("anios").select("anio").order("anio"),
+    supabase.from("app_config").select("rfc_propio").maybeSingle(),
+    supabase.from("v_cfdi").select("uuid,fecha,tipo,tipo_comprobante,emisor_nombre,receptor_nombre,total,ret_isr,subtotal,iva,ret_iva,movimiento_id").in("tipo", ["nomina", "emitida"]).is("movimiento_id", null).gte("fecha", desde).lte("fecha", hasta).order("fecha"),
+    supabase.auth.getUser(),
   ]);
   const porMes: Record<string, number> = {};
   must<{ fecha: string; monto_mxn: number }[]>(salidas, "salidas").forEach((s) => {
@@ -75,6 +78,8 @@ export async function loadIngresos(supabase: SupabaseClient, anio: number): Prom
     pagadores: must<Catalogo[]>(pagadores, "pagadores"),
     ingresos: must<Ingreso[]>(ingresos, "ingresos"),
     salidas: Object.entries(porMes).map(([mes, total]) => ({ mes, total })).sort((a, b) => a.mes.localeCompare(b.mes)),
+    rfcPropio: cfg.data?.rfc_propio ?? null, userId: user?.id ?? "",
+    cfdisLibres: ((libres.data ?? []) as Record<string, unknown>[]).map((c) => Object.fromEntries(Object.entries(c).map(([k, v]) => [k, typeof v === "string" && /^-?\d+(\.\d+)?$/.test(v) ? Number(v) : v]))) as unknown as CfdiIngreso[],
   };
 }
 

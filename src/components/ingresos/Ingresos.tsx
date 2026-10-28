@@ -2,7 +2,8 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import type { Ingreso, IngresosData, TipoIngreso } from "@/lib/types";
+import type { CfdiIngreso, Ingreso, IngresosData, TipoIngreso } from "@/lib/types";
+import { subirCfdi } from "@/lib/cfdi-upload";
 import { MESN, fmt, fmt2, hoy, mesKey, ml, niceStep } from "@/lib/format";
 
 const TIPOS: { k: TipoIngreso; l: string }[] = [
@@ -75,6 +76,32 @@ export function Ingresos({ initial }: { initial: IngresosData }) {
     finally { setBusy(false); }
   };
 
+  /* ---------- CFDI del ingreso: subir o ligar uno ya cargado, y comprobar el monto ---------- */
+  const [libres, setLibres] = useState<CfdiIngreso[]>(initial.cfdisLibres);
+  const [subiendo, setSubiendo] = useState<string | null>(null);
+  const cuadra = (i: Ingreso, c: { total: number }) => Math.abs(c.total - i.monto) < 1;
+  const candidatos = (i: Ingreso) => libres.filter((c) => (i.tipo === "sueldo" ? c.tipo === "nomina" : c.tipo === "emitida") && (cuadra(i, c) || mesKey(c.fecha) === mesKey(i.fecha))).sort((a, b) => Number(cuadra(i, b)) - Number(cuadra(i, a)));
+  const ligar = async (i: Ingreso, c: { uuid: string; total: number; fecha: string }) => {
+    const { error } = await supabase.rpc("ligar_cfdi", { p_uuid: c.uuid, p_mov: i.id });
+    if (error) return aviso("No se ligó: " + error.message);
+    setIngs((prev) => prev.map((x) => x.id === i.id ? { ...x, tiene_cfdi: true, cfdi_uuid: c.uuid } : x));
+    setLibres((prev) => prev.filter((x) => x.uuid !== c.uuid));
+    const dif = Math.round((c.total - i.monto) * 100) / 100;
+    aviso(dif === 0 ? `CFDI ligado · cuadra exacto con ${fmt(i.monto)}.` : `CFDI ligado · OJO: el CFDI dice ${fmt2(c.total)} y registraste ${fmt2(i.monto)} (dif. ${dif > 0 ? "+" : ""}${fmt2(dif)}).`);
+  };
+  const subirYLigar = async (i: Ingreso, files: FileList | null) => {
+    if (!files?.length) return;
+    const xml = Array.from(files).find((f) => f.name.toLowerCase().endsWith(".xml")); const pdf = Array.from(files).find((f) => f.name.toLowerCase().endsWith(".pdf"));
+    if (!xml) return aviso("Sube el XML del CFDI (el PDF es opcional).");
+    setSubiendo(i.id); setBusy(true);
+    try {
+      const { p } = await subirCfdi(supabase, initial.userId, initial.rfcPropio, xml, pdf);
+      const esperado = i.tipo === "sueldo" ? "nomina" : "emitida";
+      if (p.tipo !== esperado) { aviso(`Ese CFDI es ${p.tipo}, no ${esperado === "nomina" ? "de nómina" : "una factura emitida por ti"}. Quedó guardado en Facturación sin ligar.`); return; }
+      await ligar(i, { uuid: p.uuid, total: p.total, fecha: p.fecha });
+    } catch (e) { aviso("No se subió: " + (e as Error).message); }
+    finally { setSubiendo(null); setBusy(false); }
+  };
   const borrar = async (i: Ingreso) => {
     if (!confirm(`¿Borrar ${LABEL[i.tipo]} ${fmt(i.monto)} del ${i.fecha}?`)) return;
     const { error } = await supabase.from("movimientos").delete().eq("id", i.id);
@@ -244,8 +271,10 @@ export function Ingresos({ initial }: { initial: IngresosData }) {
                 <b style={{ color: "var(--ink)" }}>{LABEL[i.tipo]}</b> · {i.descripcion}{i.aporta_nombre ? ` · ${i.aporta_nombre}` : ""}{" "}
                 <span style={{ color: "var(--gray-soft)", fontSize: 12 }}>{i.fecha.slice(8, 10)} {ml(i.fecha)}</span>
                 {i.proyectado && <> <span className="badge" style={{ background: "var(--gray-soft)" }}>proyectado</span></>}
-                {["sueldo", "comision"].includes(i.tipo) && !i.proyectado && (
-                  <> <span className="badge" style={{ background: i.tiene_cfdi ? "var(--nec)" : "var(--gus)" }}>{i.tiene_cfdi ? "CFDI" : "CFDI pendiente"}</span></>
+                {["sueldo", "comision"].includes(i.tipo) && !i.proyectado && (i.tiene_cfdi
+                  ? <> <span className="badge" style={{ background: "var(--nec)" }} title={i.cfdi_uuid ?? ""}>CFDI ✓</span></>
+                  : <> <label className="badge" style={{ background: "var(--gus)", cursor: "pointer" }} title="Sube el XML (y PDF) del CFDI para ligarlo y comprobar el monto">{subiendo === i.id ? "subiendo…" : "CFDI pendiente · subir XML"}<input type="file" accept=".xml,.pdf" multiple style={{ display: "none" }} onChange={(e) => { subirYLigar(i, e.target.files); e.target.value = ""; }} /></label>
+                    {candidatos(i).slice(0, 2).map((c) => <button key={c.uuid} className="link" type="button" style={{ fontSize: 11, marginLeft: 6 }} onClick={() => ligar(i, c)} title={`${c.emisor_nombre ?? ""} · ${c.fecha} · ${fmt2(c.total)}`}>ligar CFDI {c.fecha.slice(5)} {fmt(c.total)}{cuadra(i, c) ? " ✓" : " ⚠"}</button>)}</>
                 )}
               </span>
               <span className="r">

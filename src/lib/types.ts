@@ -71,6 +71,7 @@ export interface GastosData {
   cfdisSinLigar: CfdiMini[];   // recibidas del año sin gasto ligado, para enlazar desde la lista
   facturasPorMov: Record<string, number>;   // cuántas facturas tiene cada gasto
 }
+export interface CfdiIngreso { uuid: string; fecha: string; tipo: string; tipo_comprobante: string; emisor_nombre: string | null; receptor_nombre: string | null; total: number; ret_isr: number; subtotal: number; iva: number; ret_iva: number }
 export interface CfdiMini { uuid: string; fecha: string; emisor_nombre: string | null; total_mxn: number; concepto: string | null }
 
 export type TipoIngreso = "sueldo" | "comision" | "bono" | "dividendo_interes" | "reembolso" | "aportacion_akela" | "otro";
@@ -114,6 +115,9 @@ export interface IngresosData {
   pagadores: Catalogo[];
   ingresos: Ingreso[];
   salidas: SalidaMes[];
+  rfcPropio: string | null;
+  userId: string;
+  cfdisLibres: CfdiIngreso[];   // nómina / emitidas del año sin ligar a un ingreso
 }
 
 /** Fila de ibkr_estados_mensuales (importes USD). */
