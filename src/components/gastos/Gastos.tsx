@@ -66,7 +66,7 @@ export function Gastos({ initial }: { initial: GastosData }) {
       <div className="card">
         <div className="ct"><span>Caja del mes · ¿cómo cierro?</span><span style={{ display: "flex", gap: 8, alignItems: "center" }}><select value={mes} onChange={(e) => setMes(e.target.value)}>{mesesOpc.map((k) => <option key={k} value={k}>{ml(k)}</option>)}</select><button className="link" type="button" onClick={() => setAbierto(!abierto)}>{abierto ? "ocultar detalle" : "ver detalle"}</button></span></div>
         <div className="stat-row">
-          <div className="stat"><div className="v">{fmt(efectivo)}</div><div className="l">En cheques hoy{tarjetasDeuda ? ` · tarjetas por pagar ${fmt(tarjetasDeuda)}` : ""}</div></div>
+          <div className="stat"><div className="v">{fmt(efectivo)}</div><div className="l">En cheques hoy{tarjetasDeuda ? ` · tarjetas por pagar ${fmt(tarjetasDeuda)}` : ""}{(() => { const c = initial.saldos.find((x) => x.tipo === "cheques" && /cheques/i.test(x.nombre)); return c?.fecha_saldo_inicial ? ` · cierre ${c.fecha_saldo_inicial}` : ""; })()}</div></div>
           <div className="stat"><div className="v pos">{fmt(entradasReal + entradasProy)}</div><div className="l">Entradas del mes · {fmt(entradasReal)} ya entraron{entradasProy ? ` · ${fmt(entradasProy)} por entrar` : ""}</div></div>
           <div className="stat"><div className="v">{fmt(pptoTotal)}</div><div className="l">Gastos esperados · ya gastado {fmt(realEnPpto)}{sinPpto > 0 ? ` (+${fmt(sinPpto)} fuera de presupuesto)` : ""} · falta {fmt(restaTotal)}</div></div>
           <div className="stat"><div className={"v " + (cierre == null ? "" : cierre >= 0 ? "pos" : "neg")}>{cierre == null ? "—" : fmt(cierre)}</div><div className="l">{cierre == null ? "Mes cerrado" : cierre >= 0 ? "Cierre estimado: te sobra" : "Cierre estimado: te falta"} · cheques + por entrar − por gastar</div></div>
@@ -227,7 +227,7 @@ export function Gastos({ initial }: { initial: GastosData }) {
         if (error) throw error;
         ids.push(data as string);
       }
-      await refetchMov(ids);
+      await refetchMov(ids); router.refresh();
       setFmes(mesKey(g.fecha)); setSelCat(g.grupo.nombre);
       aviso(`${g.rubro.nombre} ${fmt(g.monto)} → ${g.grupo.nombre} (${g.cuenta.nombre})${g.msi > 0 ? ` · ${g.msi} MSI de ${fmt(cuota)}` : fechas.length > 1 ? ` · ${fechas.length} meses` : ""}`);
       if (+g.fecha.slice(0, 4) !== initial.anio) router.push(`/gastos?anio=${g.fecha.slice(0, 4)}`);
@@ -253,7 +253,7 @@ export function Gastos({ initial }: { initial: GastosData }) {
       ]);
       if (m.data) setMovs((prev) => prev.map((x) => (x.id === edit.id ? (m.data as Movimiento) : x)));
       setAsigs((prev) => [...prev.filter((x) => x.movimiento_id !== edit.id), ...((a.data ?? []) as Asignacion[])]);
-      setEdit(null); aviso("Movimiento actualizado.");
+      setEdit(null); aviso("Movimiento actualizado."); router.refresh();
     } catch (e) { aviso("No se guardó: " + (e as Error).message); } finally { setBusy(false); }
   };
 
@@ -288,7 +288,7 @@ export function Gastos({ initial }: { initial: GastosData }) {
     const { error } = await supabase.from("movimientos").delete().eq("id", m.id);
     if (error) return aviso("No se borró: " + error.message);
     setMovs((prev) => prev.filter((x) => x.id !== m.id));
-    setAsigs((prev) => prev.filter((x) => x.movimiento_id !== m.id));
+    setAsigs((prev) => prev.filter((x) => x.movimiento_id !== m.id)); router.refresh();
   };
 
   const nuevoRubro = async (nombre: string, cls: Clasificacion, padre: Rubro | null) => {
