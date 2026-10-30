@@ -252,20 +252,22 @@ export function Ingresos({ initial }: { initial: IngresosData }) {
           else { saldoIni = filas.reduce<number[]>((acc, f, i) => { acc[i] = i ? acc[i - 1] + filas[i - 1].ent - filas[i - 1].salR - filas[i - 1].salP : 0; return acc; }, []); }
           return (
             <div className="tbl"><table>
-              <thead><tr><th>Mes</th><th className="n">Saldo inicio</th><th className="n">+ Entradas</th><th className="n">− Salidas realizadas</th><th className="n">− Salidas proyectadas</th><th className="n">Saldo fin</th><th className="n">% del ingreso</th></tr></thead>
+              <thead><tr><th>Mes</th><th className="n">Saldo inicio</th><th className="n">− Salidas realizadas</th><th className="n">− Salidas proyectadas</th><th className="n" title="Saldo después de pagar todo y antes de que caiga la nómina (fin de mes)">Punto más bajo</th><th className="n">+ Entradas</th><th className="n">Saldo fin</th><th className="n">% del ingreso</th></tr></thead>
               <tbody>
                 {filas.map((f) => { if (!f.ent && !f.salR && !f.salP && f.i !== idxHoy) return null; const fin = saldoIni[f.i] + f.ent - f.salR - f.salP; const hoyRow = f.i === idxHoy; return (
                   <tr key={f.k} style={f.i > idxHoy ? { opacity: 0.6 } : undefined}>
                     <td>{ml(f.k)}{hoyRow && <> <span className="badge" style={{ background: "var(--nec)" }}>en curso</span></>}{f.i > idxHoy && <> <span className="badge" style={{ background: "var(--gray-soft)" }}>proy.</span></>}</td>
                     <td className={"n" + (saldoIni[f.i] < 0 ? " neg" : "")}>{fmt(saldoIni[f.i])}</td>
-                    <td className="n pos">{f.ent ? fmt(f.ent) : "·"}</td><td className="n neg">{f.salR ? fmt(f.salR) : "·"}</td><td className="n" style={{ color: "var(--gray-soft)" }}>{f.salP ? fmt(f.salP) : "·"}</td>
+                    <td className="n neg">{f.salR ? fmt(f.salR) : "·"}</td><td className="n" style={{ color: "var(--gray-soft)" }}>{f.salP ? fmt(f.salP) : "·"}</td>
+                    {(() => { const bajo = saldoIni[f.i] - f.salR - f.salP; return <td className={"n " + (bajo < 0 ? "neg" : "")} style={{ fontWeight: 600 }}>{f.i >= idxHoy ? fmt(bajo) : "·"}</td>; })()}
+                    <td className="n pos">{f.ent ? fmt(f.ent) : "·"}</td>
                     <td className={"n " + (fin < 0 ? "neg" : "pos")} style={{ fontWeight: 700 }}>{fmt(fin)}{hoyRow && <div className="hint" style={{ fontWeight: 400, fontSize: 11 }}>hoy {fmt(initial.cheques)}</div>}</td>
                     <td className="n">{f.ent ? Math.round(((f.ent - f.salR - f.salP) / f.ent) * 100) : 0}%</td>
                   </tr>); })}
-                <tr className="tot"><td>Año</td><td /><td className="n">{fmt(filas.reduce((a, f) => a + f.ent, 0))}</td><td className="n">{fmt(filas.reduce((a, f) => a + f.salR, 0))}</td><td className="n">{fmt(filas.reduce((a, f) => a + f.salP, 0))}</td><td className="n">{fmt(saldoIni[11] + filas[11].ent - filas[11].salR - filas[11].salP)}</td><td className="n">{(() => { const e = filas.reduce((a, f) => a + f.ent, 0); return e ? Math.round(((e - filas.reduce((a, f) => a + f.salR + f.salP, 0)) / e) * 100) : 0; })()}%</td></tr>
+                <tr className="tot"><td>Año</td><td /><td className="n">{fmt(filas.reduce((a, f) => a + f.salR, 0))}</td><td className="n">{fmt(filas.reduce((a, f) => a + f.salP, 0))}</td><td /><td className="n">{fmt(filas.reduce((a, f) => a + f.ent, 0))}</td><td className="n">{fmt(saldoIni[11] + filas[11].ent - filas[11].salR - filas[11].salP)}</td><td className="n">{(() => { const e = filas.reduce((a, f) => a + f.ent, 0); return e ? Math.round(((e - filas.reduce((a, f) => a + f.salR + f.salP, 0)) / e) * 100) : 0; })()}%</td></tr>
               </tbody>
             </table></div>); })()}
-        <p className="hint">Saldo inicio/fin = caja en cheques. El mes en curso parte del saldo real de hoy ({fmt(initial.cheques)}); hacia atrás se reconstruye con entradas − salidas (aproximado si hubo pagos de tarjeta registrados como gasto), hacia adelante usa las entradas proyectadas y el presupuesto de «Caja del mes» (en el mes en curso, solo lo que falta por gastar). Salidas realizadas incluyen Akela, ahorro y deuda.</p>
+        <p className="hint">Saldo inicio/fin = caja en cheques. La nómina cae a fin de mes, así que los gastos del mes se pagan con el saldo inicial: «Punto más bajo» es lo que queda después de pagar todo y antes de cobrar; si es negativo, ese mes te falta caja. El mes en curso parte del saldo real de hoy ({fmt(initial.cheques)}); hacia atrás se reconstruye con entradas − salidas (aproximado si hubo pagos de tarjeta registrados como gasto), hacia adelante usa las entradas proyectadas y el presupuesto de «Caja del mes» (en el mes en curso, solo lo que falta por gastar). Salidas realizadas incluyen Akela, ahorro y deuda.</p>
       </div>
 
       <div className="g2">
