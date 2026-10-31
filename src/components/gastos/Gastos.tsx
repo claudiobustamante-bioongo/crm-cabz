@@ -95,6 +95,59 @@ export function Gastos({ initial }: { initial: GastosData }) {
         </>}
       </div>);
   };
+  /* deudas: registrar el pago (abono desde cheques) o ajustar el saldo real del banco */
+  const Deudas = () => {
+    const [abierto, setAbierto] = useState(false);
+    const [sel, setSel] = useState<string | null>(null);        // deuda en acción
+    const [modo, setModo] = useState<"pago" | "ajuste">("pago");
+    const origenes = initial.cuentas.filter((c) => c.tipo === "cheques");
+    const [f, setF] = useState({ fecha: hoy(), desde: origenes.find((c) => /cheques/i.test(c.nombre))?.id ?? origenes[0]?.id ?? "", monto: "", saldo: "", proximo: "" });
+    if (!initial.deudas.length) return null;
+    const d = initial.deudas.find((x) => x.deuda_id === sel);
+    const abrir = (x: typeof initial.deudas[number], m: "pago" | "ajuste") => { setSel(x.deuda_id); setModo(m); setF({ ...f, monto: String(x.proximo_pago_monto ?? ""), saldo: String(x.saldo_actual), proximo: x.proximo_pago_fecha ?? "" }); setAbierto(true); };
+    const pagar = async () => {
+      if (!d) return; const m = Number(f.monto); if (!(m > 0)) return aviso("Monto del pago.");
+      setBusy(true);
+      const { error } = await supabase.rpc("registrar_movimiento", { p: { fecha: f.fecha, tipo: "abono_deuda", cuenta_id: f.desde, cuenta_destino_id: d.cuenta_id, monto: m, moneda: "MXN", descripcion: `Pago ${d.deuda}` } });
+      setBusy(false); if (error) return aviso("No se registró: " + error.message);
+      aviso(`Pago de ${fmt(m)} a ${d.deuda}: sale de Cheques y marca la cuota como pagada.`); setSel(null); router.refresh();
+    };
+    const ajustar = async () => {
+      if (!d) return; const sdo = Number(f.saldo); if (!(sdo >= 0)) return aviso("Saldo.");
+      setBusy(true);
+      const { data, error } = await supabase.rpc("ajustar_deuda", { p_deuda: d.deuda_id, p_saldo: sdo, p_fecha: f.fecha, p_proximo_pago: f.proximo || null });
+      setBusy(false); if (error) return aviso("No se ajustó: " + error.message + (/function/i.test(error.message) ? " (corre 44_deudas_ajuste.sql)" : ""));
+      aviso(`${d.deuda}: saldo ${fmt(sdo)} al ${f.fecha}; ${data} pagos recalculados.`); setSel(null); router.refresh();
+    };
+    return (
+      <div className="card" style={{ padding: abierto ? undefined : "8px 14px" }}>
+        <div className="ct" style={{ marginBottom: abierto ? undefined : 0 }}><span>Deudas · {fmt(initial.deudas.reduce((a, x) => a + x.saldo_actual * (x.moneda === "MXN" ? 1 : x.moneda === "USD" ? 18.5 : 20), 0))} aprox.</span><button className="link" type="button" onClick={() => setAbierto(!abierto)}>{abierto ? "cerrar" : "ver / pagar / ajustar"}</button></div>
+        {abierto && <>
+          <div className="tbl"><table style={{ fontSize: 12.5 }}>
+            <thead><tr><th>Préstamo</th><th className="n">Saldo</th><th>Saldo al</th><th>Próximo pago</th><th className="n">Monto</th><th className="n">Restan</th><th>Se liquida</th><th className="n">Tasa</th><th className="no-print"></th></tr></thead>
+            <tbody>{initial.deudas.map((x) => <tr key={x.deuda_id} className={sel === x.deuda_id ? "lead" : undefined}>
+              <td style={{ fontWeight: 600, color: "var(--ink)" }}>{x.deuda}</td><td className="n neg" style={{ fontWeight: 700 }}>{x.moneda !== "MXN" ? x.moneda + " " : ""}{fmt(x.saldo_actual)}</td><td className="hint">{x.fecha_saldo_referencia}</td><td>{x.proximo_pago_fecha ?? "·"}</td><td className="n">{x.proximo_pago_monto ? fmt(x.proximo_pago_monto) : "·"}</td><td className="n">{x.pagos_restantes}</td><td>{x.fecha_liquidacion ?? "·"}</td><td className="n">{(x.tasa_anual * 100).toFixed(1)} %</td>
+              <td style={{ whiteSpace: "nowrap" }}><button className="link" type="button" onClick={() => abrir(x, "pago")}>registrar pago</button> · <button className="link" type="button" onClick={() => abrir(x, "ajuste")}>ajustar saldo</button></td></tr>)}</tbody>
+          </table></div>
+          {d && <div style={{ marginTop: 8, padding: "8px 10px", background: "var(--bone)", borderRadius: 8, display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
+            <b style={{ flexBasis: "100%", fontSize: 13 }}>{modo === "pago" ? `Pago a ${d.deuda}` : `Saldo real de ${d.deuda} (lo que dice el banco)`}</b>
+            <div><label style={{ margin: "0 0 2px" }}>Fecha</label><input type="date" value={f.fecha} onChange={(e) => setF({ ...f, fecha: e.target.value })} /></div>
+            {modo === "pago" ? <>
+              <div><label style={{ margin: "0 0 2px" }}>Desde</label><select value={f.desde} onChange={(e) => setF({ ...f, desde: e.target.value })}>{origenes.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}</select></div>
+              <div><label style={{ margin: "0 0 2px" }}>Monto (MXN)</label><input type="number" value={f.monto} onChange={(e) => setF({ ...f, monto: e.target.value })} style={{ width: 120 }} /></div>
+              <button className="btn sm" type="button" disabled={busy} onClick={pagar}>Registrar pago</button>
+              <span className="hint" style={{ flexBasis: "100%" }}>Baja Cheques y marca la siguiente cuota como pagada (el saldo del préstamo baja según la tabla de amortización). Si el banco dice otro saldo, usa «ajustar saldo».</span>
+            </> : <>
+              <div><label style={{ margin: "0 0 2px" }}>Saldo ({d.moneda})</label><input type="number" value={f.saldo} onChange={(e) => setF({ ...f, saldo: e.target.value })} style={{ width: 130 }} /></div>
+              <div><label style={{ margin: "0 0 2px" }}>Próximo pago</label><input type="date" value={f.proximo} onChange={(e) => setF({ ...f, proximo: e.target.value })} /></div>
+              <button className="btn sm" type="button" disabled={busy} onClick={ajustar}>Ajustar</button>
+              <span className="hint" style={{ flexBasis: "100%" }}>Fija el saldo a esa fecha y recalcula los pagos pendientes con la misma tasa y mensualidad. El net worth lo toma de inmediato.</span>
+            </>}
+            <button className="link" type="button" onClick={() => setSel(null)}>cancelar</button>
+          </div>}
+        </>}
+      </div>);
+  };
   /* cierre de saldos: fija el saldo real de cheques y tarjetas a una fecha; desde ahí el CRM suma solo lo nuevo */
   const CierreSaldos = () => {
     const [abierto, setAbierto] = useState(false);
@@ -309,6 +362,7 @@ export function Gastos({ initial }: { initial: GastosData }) {
       <Formulario rubros={rubros} cuentas={initial.cuentas} libros={initial.libros} pagadores={initial.pagadores} eventos={initial.eventos} busy={busy} onAgregar={agregar} onNuevoRubro={nuevoRubro} />
       <CajaMes />
       <PagoTarjeta />
+      <Deudas />
       <CierreSaldos />
 
       <h2>Tu mes en números</h2>

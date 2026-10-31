@@ -72,8 +72,10 @@ export interface GastosData {
   facturasPorMov: Record<string, number>;   // cuántas facturas tiene cada gasto
   saldos: { id: string; nombre: string; tipo: string; moneda: string; saldo: number; fecha_saldo_inicial: string | null }[];   // cheques y tarjetas, saldo según el CRM
   presupuestos: Presupuesto[];   // del año, libro y rubro
+  deudas: Deuda[];
   ingresosMes: { mes: string; monto_mxn: number; proyectado: boolean; tipo: string }[];   // entradas del año (reales y proyectadas)
 }
+export interface Deuda { deuda_id: string; cuenta_id: string; deuda: string; moneda: string; saldo_actual: number; fecha_saldo_referencia: string; proximo_pago_fecha: string | null; proximo_pago_monto: number | null; pagos_restantes: number; fecha_liquidacion: string | null; tasa_anual: number; pago_periodico: number | null; periodicidad: string }
 export interface Presupuesto { id: string; mes: string; libro: string; rubro_id: string; monto: number; notas: string | null }
 export interface CfdiIngreso { uuid: string; fecha: string; tipo: string; tipo_comprobante: string; emisor_nombre: string | null; receptor_nombre: string | null; total: number; ret_isr: number; subtotal: number; iva: number; ret_iva: number }
 export interface CfdiMini { uuid: string; fecha: string; emisor_nombre: string | null; total_mxn: number; concepto: string | null }
