@@ -33,15 +33,20 @@ export function Ingresos({ initial }: { initial: IngresosData }) {
   const [fecha, setFecha] = useState(hoy());
   const [cuenta, setCuenta] = useState("Cheques");
   const [nota, setNota] = useState("Nómina Cordada");
-  const [bruto, setBruto] = useState("");
+  const [recibido, setRecibido] = useState("");   // lo que te transfirieron (neto); de ahí se desglosa
+  const [modoCom, setModoCom] = useState<"recibido" | "honorarios">("recibido");
+  const [brutoIn, setBrutoIn] = useState("");
   const [pm, setPm] = useState(true);
   const [cliente, setCliente] = useState("");
   const [aporta, setAporta] = useState("HAMB");
   const [proy, setProy] = useState(false);
   const [msg, setMsg] = useState("");
 
+  // factor neto/honorarios: persona moral retiene 10 % ISR y 2/3 del IVA → 1 + 0.16 − 0.10 − 0.10667 = 0.95333; persona física: 1.16
+  const factor = pm ? 1 + 0.16 - 0.1 - 0.16 * (2 / 3) : 1.16;
+  const bruto = modoCom === "recibido" ? ((+recibido || 0) / factor).toFixed(2) : brutoIn;
   const iva = (+bruto || 0) * 0.16, rISR = pm ? (+bruto || 0) * 0.1 : 0, rIVA = pm ? iva * (2 / 3) : 0;
-  const netoCom = (+bruto || 0) + iva - rISR - rIVA;
+  const netoCom = modoCom === "recibido" ? (+recibido || 0) : (+bruto || 0) + iva - rISR - rIVA;
 
   const elegirTipo = (t: TipoIngreso) => {
     setTipo(t); setMsg("");
@@ -70,7 +75,7 @@ export function Ingresos({ initial }: { initial: IngresosData }) {
       setIngs((prev) => [row as Ingreso, ...prev.filter((x) => !(x.proyectado && x.tipo === tipo && mesKey(x.fecha) === mesKey(fecha) && !proy))]);
       setFmes(mesKey(fecha));
       aviso(`${LABEL[tipo]} ${fmt(m)} registrado${proy ? " (proyectado)" : ""}.`);
-      if (tipo !== "sueldo") setMonto(""); if (tipo === "comision") setBruto("");
+      if (tipo !== "sueldo") setMonto(""); if (tipo === "comision") { setRecibido(""); setBrutoIn(""); }
       if (+fecha.slice(0, 4) !== initial.anio) router.push(`/ingresos?anio=${fecha.slice(0, 4)}`);
     } catch (e) { aviso("No se guardó: " + (e as Error).message); }
     finally { setBusy(false); }
@@ -150,7 +155,9 @@ export function Ingresos({ initial }: { initial: IngresosData }) {
         </div>
         {tipo === "comision" && (
           <div className="g4">
-            <div><label htmlFor="i-bruto">Honorarios (subtotal)</label><input id="i-bruto" type="number" inputMode="decimal" value={bruto} onChange={(e) => setBruto(e.target.value)} placeholder="30000" /></div>
+            <div><label htmlFor="i-bruto">{modoCom === "recibido" ? "Lo que te transfirieron" : "Honorarios (subtotal)"} <button type="button" className="link" style={{ fontSize: 11, marginLeft: 6 }} onClick={() => setModoCom(modoCom === "recibido" ? "honorarios" : "recibido")}>{modoCom === "recibido" ? "capturar honorarios" : "capturar lo recibido"}</button></label>
+              <input id="i-bruto" type="number" inputMode="decimal" value={modoCom === "recibido" ? recibido : brutoIn} onChange={(e) => modoCom === "recibido" ? setRecibido(e.target.value) : setBrutoIn(e.target.value)} placeholder={modoCom === "recibido" ? "28600" : "30000"} onKeyDown={(e) => e.key === "Enter" && agregar()} />
+              {modoCom === "recibido" && <div className="hint" style={{ fontSize: 11 }}>honorarios {fmt2(+bruto)} = recibido ÷ {factor.toFixed(5)}</div>}</div>
             <div><label htmlFor="i-pm">Receptor</label>
               <select id="i-pm" value={pm ? "1" : "0"} onChange={(e) => setPm(e.target.value === "1")}>
                 <option value="1">Persona moral (retiene)</option><option value="0">Persona física</option>
