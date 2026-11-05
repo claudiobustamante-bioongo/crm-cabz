@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
@@ -132,6 +132,28 @@ export function Facturacion({ initial, vista = "resumen", filtro, soloLectura = 
   const sinCfdi = initial.sinCfdi;   // todos los gastos del año (con o sin factura)
   const [ext, setExt] = useState(initial.extranjeras);
   const [ligandoExt, setLigandoExt] = useState<string | null>(null);
+  const [creandoExt, setCreandoExt] = useState<string | null>(null);
+  const [fx, setFx] = useState({ fecha: "", monto: "", moneda: "MXN", rubro_id: "", cuenta_id: initial.cuentas.find((c) => c.nombre === "AMEX")?.id ?? initial.cuentas[0]?.id ?? "", libro: "", descripcion: "", msi: 0 });
+  const crearGastoExt = async (x: typeof ext[number]) => {
+    const rubro = initial.rubros.find((r) => r.id === fx.rubro_id); const monto = Number(fx.monto);
+    if (!rubro) return aviso("Elige el rubro."); if (!(monto > 0)) return aviso("Monto."); if (!fx.fecha) return aviso("Fecha.");
+    const grupo = initial.rubros.find((r) => r.id === rubro.padre_id);
+    const libro = fx.libro || (({ Akela: "AKELA", Bioongo: "BIOONGO", Periplo: "PERIPLO" } as Record<string, string>)[grupo?.nombre ?? ""] ?? "PERSONAL");
+    setBusy(true);
+    try {
+      const n = fx.msi > 1 ? fx.msi : 1; const cuota = Math.round((monto / n) * 100) / 100; let primero: string | null = null;
+      const [y, m0, dia] = [+fx.fecha.slice(0, 4), +fx.fecha.slice(5, 7), +fx.fecha.slice(8, 10)];
+      const fechaMes = (i: number) => { const d = new Date(Date.UTC(y, m0 - 1 + i, 1)); const ult = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate(); return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(Math.min(dia, ult)).padStart(2, "0")}`; };
+      for (let i = 0; i < n; i++) {
+        const m = i === n - 1 ? Math.round((monto - cuota * (n - 1)) * 100) / 100 : cuota;
+        const { data, error } = await supabase.rpc("registrar_movimiento", { p: { fecha: fechaMes(i), tipo: "gasto", descripcion: fx.descripcion || x.nombre.replace(/\.pdf$/i, ""), monto: m, moneda: fx.moneda, cuenta_id: fx.cuenta_id, rubro_id: rubro.id, notas: [`Factura extranjera: ${x.nombre}`, n > 1 ? `MSI ${i + 1}/${n} · total ${fmt2(monto)}` : ""].filter(Boolean).join(" · "), asignaciones: [{ libro, pagador: "CABZ", porcentaje: 100 }] } });
+        if (error) throw error; if (i === 0) primero = data as string;
+      }
+      if (primero) await ligarExt(x, primero);
+      setCreandoExt(null); aviso(`Gasto creado${n > 1 ? ` en ${n} MSI` : ""} y ligado al comprobante.`);
+    } catch (e) { aviso("No se creó: " + (e as Error).message); }
+    setBusy(false);
+  };
   const ligarExt = async (x: typeof ext[number], movId: string | null) => {
     if (!x.documento_id) return;
     const { error } = await supabase.from("documentos").update({ movimiento_id: movId }).eq("id", x.documento_id);
@@ -299,7 +321,8 @@ export function Facturacion({ initial, vista = "resumen", filtro, soloLectura = 
           <div className="tbl"><table>
             <thead><tr><th>Mes</th><th>Archivo</th><th>Gasto</th><th></th></tr></thead>
             <tbody>{ext.map((x) => (
-              <tr key={x.drive_id}><td>{x.mes ? ml(x.mes) : "—"}</td><td style={{ whiteSpace: "normal" }}>{x.nombre}<div className="hint" style={{ fontSize: 11 }}>{x.carpeta}</div></td>
+              <Fragment key={x.drive_id}>
+              <tr><td>{x.mes ? ml(x.mes) : "—"}</td><td style={{ whiteSpace: "normal" }}>{x.nombre}<div className="hint" style={{ fontSize: 11 }}>{x.carpeta}</div></td>
                 <td style={{ whiteSpace: "normal", maxWidth: 260 }}>{x.movimiento_id ? <span><span className="badge" style={{ background: "var(--nec)" }}>ligada</span> {x.gasto_fecha} · <b>{x.gasto_rubro}</b> · {x.gasto_cuenta} · {fmt2(Number(x.gasto_monto ?? 0))}</span> : <span className="hint">sin gasto</span>}
                   {ligandoExt === x.drive_id && x.documento_id && (
                     <div style={{ marginTop: 4 }}>
@@ -308,9 +331,26 @@ export function Facturacion({ initial, vista = "resumen", filtro, soloLectura = 
                       <button className="link" type="button" onClick={() => setLigandoExt(null)}>cancelar</button>
                     </div>)}</td>
                 <td style={{ whiteSpace: "nowrap" }}>
-                  {!ro && !x.movimiento_id && x.documento_id && <><button className="link" type="button" onClick={() => setLigandoExt(ligandoExt === x.drive_id ? null : x.drive_id)}>Ligar a gasto</button> · </>}
+                  {!ro && !x.movimiento_id && x.documento_id && <><button className="link" type="button" onClick={() => { setCreandoExt(creandoExt === x.drive_id ? null : x.drive_id); setLigandoExt(null); setFx({ ...fx, fecha: x.mes ? `${String(x.mes).slice(0, 7)}-01` : "", descripcion: x.nombre.replace(/\.pdf$/i, "") }); }}>Crear gasto</button> · <button className="link" type="button" onClick={() => { setLigandoExt(ligandoExt === x.drive_id ? null : x.drive_id); setCreandoExt(null); }}>Ligar a gasto</button> · </>}
                   {!ro && x.movimiento_id && <><button className="link" type="button" onClick={() => ligarExt(x, null)}>Desligar</button> · </>}
                   {x.storage_path && <button className="link" type="button" onClick={() => abrir(x.storage_path)}>PDF</button>}{x.link_drive && <> · <a className="link" href={x.link_drive} target="_blank" rel="noreferrer">Drive</a></>}</td></tr>
+              {creandoExt === x.drive_id && !ro && (
+                <tr><td colSpan={4} style={{ background: "var(--bone)", padding: "8px 10px" }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
+                    <div><label style={{ margin: "0 0 2px" }}>Fecha</label><input type="date" value={fx.fecha} onChange={(e) => setFx({ ...fx, fecha: e.target.value })} /></div>
+                    <div><label style={{ margin: "0 0 2px" }}>Monto</label><input type="number" value={fx.monto} onChange={(e) => setFx({ ...fx, monto: e.target.value })} style={{ width: 110 }} /></div>
+                    <div><label style={{ margin: "0 0 2px" }}>Moneda</label><select value={fx.moneda} onChange={(e) => setFx({ ...fx, moneda: e.target.value })}><option>MXN</option><option>USD</option><option>EUR</option></select></div>
+                    <div><label style={{ margin: "0 0 2px" }}>Rubro</label><select value={fx.rubro_id} onChange={(e) => setFx({ ...fx, rubro_id: e.target.value })}><option value="">—</option>{initial.rubros.filter((r) => !r.padre_id).map((g) => <optgroup key={g.id} label={g.nombre}>{initial.rubros.filter((r) => r.padre_id === g.id).map((r) => <option key={r.id} value={r.id}>{r.nombre}</option>)}</optgroup>)}</select></div>
+                    <div><label style={{ margin: "0 0 2px" }}>Cuenta</label><select value={fx.cuenta_id} onChange={(e) => setFx({ ...fx, cuenta_id: e.target.value })}>{initial.cuentas.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}</select></div>
+                    <div><label style={{ margin: "0 0 2px" }}>Libro</label><select value={fx.libro} onChange={(e) => setFx({ ...fx, libro: e.target.value })}><option value="">según rubro</option>{initial.libros.map((l) => <option key={l.codigo} value={l.codigo}>{l.codigo}</option>)}</select></div>
+                    <div><label style={{ margin: "0 0 2px" }}>MSI</label><select value={fx.msi} onChange={(e) => setFx({ ...fx, msi: Number(e.target.value) })}><option value={0}>no</option>{[3, 6, 9, 12, 18].map((n) => <option key={n} value={n}>{n}</option>)}</select></div>
+                    <div style={{ flexBasis: 240 }}><label style={{ margin: "0 0 2px" }}>Descripción</label><input type="text" value={fx.descripcion} onChange={(e) => setFx({ ...fx, descripcion: e.target.value })} /></div>
+                    <button className="btn sm" type="button" disabled={busy} onClick={() => crearGastoExt(x)}>Crear y ligar</button>
+                    <button className="link" type="button" onClick={() => setCreandoExt(null)}>cancelar</button>
+                  </div>
+                  <p className="hint" style={{ margin: "4px 0 0" }}>Monto en la moneda del cargo (USD/EUR se convierte al TC del día). Queda ligado al PDF.</p>
+                </td></tr>)}
+              </Fragment>
             ))}</tbody>
           </table></div>
           <p className="hint">Las extranjeras no traen XML, así que no entran a IVA ni deducciones; ligarlas a un gasto deja el comprobante junto al movimiento (en Gastos aparece 📎). Si el gasto aún no existe, créalo en Gastos y luego lígalo aquí.</p>
