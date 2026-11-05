@@ -491,6 +491,7 @@ export function Gastos({ initial }: { initial: GastosData }) {
                     <td>{as.map((a) => `${a.libro}${a.pagador !== "CABZ" ? " · " + a.pagador : ""}`).join(", ") || (m.tipo === "ahorro" ? "ahorro" : m.tipo)}</td>
                     <td style={{ whiteSpace: "normal", color: "var(--gray-soft)" }}>{[m.evento, m.notas].filter(Boolean).join(" · ")}
                       {(nFact[m.id] ?? (m.cfdi_uuid ? 1 : 0)) > 0 && <> {m.notas || m.evento ? "· " : ""}<span className="badge" style={{ background: "var(--aho)" }}>CFDI{(nFact[m.id] ?? 1) > 1 ? ` ×${nFact[m.id]}` : ""}</span> <button className="link" type="button" onClick={() => desligarTodas(m)} style={{ fontSize: 11 }}>desligar</button></>}
+                      {(initial.docsPorMov[m.id] ?? 0) > 0 && <> <span className="badge" title="comprobante extranjero ligado (ver en Facturación)">📎{initial.docsPorMov[m.id] > 1 ? ` ×${initial.docsPorMov[m.id]}` : ""}</span></>}
                       {ligando === m.id && (
                         <div style={{ marginTop: 4 }}>
                           <Buscador items={candidatas(m)} texto={(c) => `${c.fecha} ${c.emisor_nombre ?? ""} ${c.concepto ?? ""} ${c.total_mxn.toFixed(2)} ${Math.round(c.total_mxn)}`} placeholder={`buscar factura (${sinLigar.length} sin ligar): emisor, concepto, monto…`}

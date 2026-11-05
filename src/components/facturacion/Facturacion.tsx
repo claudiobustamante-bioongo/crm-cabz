@@ -130,6 +130,16 @@ export function Facturacion({ initial, vista = "resumen", filtro, soloLectura = 
   /* ---------- ligar a un gasto ya registrado ---------- */
   const [ligando, setLigando] = useState<string | null>(null);   // uuid de la factura
   const sinCfdi = initial.sinCfdi;   // todos los gastos del año (con o sin factura)
+  const [ext, setExt] = useState(initial.extranjeras);
+  const [ligandoExt, setLigandoExt] = useState<string | null>(null);
+  const ligarExt = async (x: typeof ext[number], movId: string | null) => {
+    if (!x.documento_id) return;
+    const { error } = await supabase.from("documentos").update({ movimiento_id: movId }).eq("id", x.documento_id);
+    if (error) return aviso("No se ligó: " + error.message + (/movimiento_id/.test(error.message) ? " (corre 45_extranjeras_ligar.sql)" : ""));
+    const { data } = await supabase.from("v_facturas_ext").select("*").eq("drive_id", x.drive_id).maybeSingle();
+    setExt((prev) => prev.map((e) => e.drive_id === x.drive_id ? ({ ...e, ...(data ?? {}), movimiento_id: movId } as typeof e) : e));
+    setLigandoExt(null); aviso(movId ? "Comprobante ligado al gasto." : "Comprobante desligado.");
+  };
   const candidatos = (c: Cfdi) => [...sinCfdi].sort((a, b) => {
     const d = (g: typeof a) => Math.abs(g.monto_mxn - c.total_mxn) / Math.max(1, c.total_mxn) + Math.abs(new Date(g.fecha).getTime() - new Date(c.fecha).getTime()) / 8.64e7 / 60;
     return d(a) - d(b);
@@ -285,15 +295,25 @@ export function Facturacion({ initial, vista = "resumen", filtro, soloLectura = 
       </div>
       {initial.extranjeras.length > 0 && (
         <div className="card">
-          <div className="ct"><span>Facturas extranjeras · {initial.anio}</span><span className="tag">{initial.extranjeras.length} PDF sin CFDI, por mes</span></div>
+          <div className="ct"><span>Facturas extranjeras · {initial.anio}</span><span className="tag">{ext.length} PDF sin CFDI · {ext.filter((x) => x.movimiento_id).length} ligadas a un gasto</span></div>
           <div className="tbl"><table>
-            <thead><tr><th>Mes</th><th>Archivo</th><th>Carpeta en Drive</th><th></th></tr></thead>
-            <tbody>{initial.extranjeras.map((x) => (
-              <tr key={x.drive_id}><td>{x.mes ? ml(x.mes) : "—"}</td><td style={{ whiteSpace: "normal" }}>{x.nombre}</td><td style={{ color: "var(--gray-soft)" }}>{x.carpeta}</td>
-                <td>{x.storage_path && <button className="link" type="button" onClick={() => abrir(x.storage_path)}>PDF</button>}{x.link_drive && <> · <a className="link" href={x.link_drive} target="_blank" rel="noreferrer">Drive</a></>}</td></tr>
+            <thead><tr><th>Mes</th><th>Archivo</th><th>Gasto</th><th></th></tr></thead>
+            <tbody>{ext.map((x) => (
+              <tr key={x.drive_id}><td>{x.mes ? ml(x.mes) : "—"}</td><td style={{ whiteSpace: "normal" }}>{x.nombre}<div className="hint" style={{ fontSize: 11 }}>{x.carpeta}</div></td>
+                <td style={{ whiteSpace: "normal", maxWidth: 260 }}>{x.movimiento_id ? <span><span className="badge" style={{ background: "var(--nec)" }}>ligada</span> {x.gasto_fecha} · <b>{x.gasto_rubro}</b> · {x.gasto_cuenta} · {fmt2(Number(x.gasto_monto ?? 0))}</span> : <span className="hint">sin gasto</span>}
+                  {ligandoExt === x.drive_id && x.documento_id && (
+                    <div style={{ marginTop: 4 }}>
+                      <Buscador items={[...sinCfdi].sort((a, b) => Math.abs(new Date(a.fecha).getTime() - new Date(x.mes ?? a.fecha).getTime()) - Math.abs(new Date(b.fecha).getTime() - new Date(x.mes ?? b.fecha).getTime()))} texto={(g) => `${g.fecha} ${g.grupo} ${g.rubro} ${g.descripcion} ${g.cuenta} ${g.monto_mxn.toFixed(2)} ${Math.round(g.monto_mxn)}`} placeholder="buscar gasto: rubro, cuenta, monto, fecha…"
+                        render={(g) => <>{g.fecha} · <b>{g.grupo} › {g.rubro}</b> · {g.cuenta} · {fmt2(g.monto_mxn)}</>} onElegir={(g) => ligarExt(x, g.id)} />
+                      <button className="link" type="button" onClick={() => setLigandoExt(null)}>cancelar</button>
+                    </div>)}</td>
+                <td style={{ whiteSpace: "nowrap" }}>
+                  {!ro && !x.movimiento_id && x.documento_id && <><button className="link" type="button" onClick={() => setLigandoExt(ligandoExt === x.drive_id ? null : x.drive_id)}>Ligar a gasto</button> · </>}
+                  {!ro && x.movimiento_id && <><button className="link" type="button" onClick={() => ligarExt(x, null)}>Desligar</button> · </>}
+                  {x.storage_path && <button className="link" type="button" onClick={() => abrir(x.storage_path)}>PDF</button>}{x.link_drive && <> · <a className="link" href={x.link_drive} target="_blank" rel="noreferrer">Drive</a></>}</td></tr>
             ))}</tbody>
           </table></div>
-          <p className="hint">Monto y proveedor de extranjeras se capturarán con lectura por IA del PDF en una sesión posterior.</p>
+          <p className="hint">Las extranjeras no traen XML, así que no entran a IVA ni deducciones; ligarlas a un gasto deja el comprobante junto al movimiento (en Gastos aparece 📎). Si el gasto aún no existe, créalo en Gastos y luego lígalo aquí.</p>
         </div>
       )}
 

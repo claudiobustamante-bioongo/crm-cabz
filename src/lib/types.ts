@@ -73,6 +73,7 @@ export interface GastosData {
   saldos: { id: string; nombre: string; tipo: string; moneda: string; saldo: number; fecha_saldo_inicial: string | null }[];   // cheques y tarjetas, saldo según el CRM
   presupuestos: Presupuesto[];   // del año, libro y rubro
   deudas: Deuda[];
+  docsPorMov: Record<string, number>;   // comprobantes (facturas extranjeras, PDF) ligados por gasto
   ingresosMes: { mes: string; monto_mxn: number; proyectado: boolean; tipo: string }[];   // entradas del año (reales y proyectadas)
 }
 export interface Deuda { deuda_id: string; cuenta_id: string; deuda: string; moneda: string; saldo_actual: number; fecha_saldo_referencia: string; proximo_pago_fecha: string | null; proximo_pago_monto: number | null; pagos_restantes: number; fecha_liquidacion: string | null; tasa_anual: number; pago_periodico: number | null; periodicidad: string }
@@ -190,7 +191,7 @@ export interface GastoSinCfdi { id: string; fecha: string; descripcion: string; 
 
 export interface DeduccionAnual { anio: number; categoria: string; registrado: number; con_comprobante: number; movimientos: number; facturas: number }
 
-export interface FacturaExt { drive_id: string; nombre: string; carpeta: string | null; mes: string | null; link_drive: string | null; procesado_en: string; storage_path: string | null }
+export interface FacturaExt { drive_id: string; nombre: string; carpeta: string | null; mes: string | null; link_drive: string | null; procesado_en: string; storage_path: string | null; documento_id?: string | null; movimiento_id?: string | null; notas?: string | null; gasto_fecha?: string | null; gasto_monto?: number | null; gasto_rubro?: string | null; gasto_cuenta?: string | null; gasto_descripcion?: string | null }
 
 export interface FacturacionData {
   anio: number;
