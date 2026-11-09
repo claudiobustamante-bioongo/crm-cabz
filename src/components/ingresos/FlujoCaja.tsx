@@ -97,6 +97,7 @@ export function FlujoCaja({ d, cheques, hoy, aviso }: { d: FlujoData; cheques: n
             </Fragment>))}
           <tr><td style={{ fontWeight: 600, color: "var(--ink)" }}>Otros gastos (sin línea)</td>{d.meses.map((m) => cell(fuera(m)))}</tr>
           <tr className="lead"><td><b>Total salidas de caja</b></td>{d.meses.map((m) => cell(salidaCaja(m), { strong: true }))}</tr>
+          <tr><td>Caja antes de cobrar <span className="hint">(inicial − gastos del mes, sin tarjetas: la nómina y el pago de tarjetas llegan al cierre)</span></td>{d.meses.map((m) => { const i = d.meses.indexOf(m); const v = caja[m].ini - (salidaCaja(m) - pagoTarj(m)); return <td key={m} className={"n" + (v < 0 ? " neg" : "")} style={{ fontWeight: i === iHoy ? 700 : undefined, color: i < iHoy ? "var(--gray-soft)" : undefined }}>{fmt(v)}</td>; })}</tr>
           <tr className="tot"><td>Caja final <span className="hint">→ inicial del siguiente</span></td>{d.meses.map((m) => cell(caja[m].fin, { neg: true, strong: true }))}</tr>
         </tbody>
       </table></TablaFija>
