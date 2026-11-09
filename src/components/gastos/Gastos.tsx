@@ -37,11 +37,23 @@ export function Gastos({ initial }: { initial: GastosData }) {
     const efectivo = initial.saldos.filter((c) => c.tipo === "cheques" && c.moneda === "MXN").reduce((a, c) => a + c.saldo, 0);
     const tarjetasDeuda = -initial.saldos.filter((c) => c.tipo === "tarjeta_credito").reduce((a, c) => a + Math.min(0, c.saldo), 0);
     const ingM = initial.ingresosMes.filter((i) => i.mes === mes); const entradasReal = ingM.filter((i) => !i.proyectado).reduce((a, i) => a + i.monto_mxn, 0), entradasProy = ingM.filter((i) => i.proyectado).reduce((a, i) => a + i.monto_mxn, 0);
-    const realMes = (rid: string) => movs.filter((m) => m.estado === "real" && m.tipo === "gasto" && m.rubro_id === rid && mesKey(m.fecha) === mes).reduce((a, m) => a + m.monto_mxn, 0);
+    const libroDe = (mid: string) => asigs.find((a) => a.movimiento_id === mid)?.libro ?? "PERSONAL";
+    const movsMes = movs.filter((m) => m.estado === "real" && m.tipo === "gasto" && mesKey(m.fecha) === mes);
+    const realMes = (rid: string) => movsMes.filter((m) => m.rubro_id === rid).reduce((a, m) => a + m.monto_mxn, 0);
+    const realLibro = (lb: string) => movsMes.filter((m) => libroDe(m.id) === lb).reduce((a, m) => a + m.monto_mxn, 0);
     const realTotalMes = movs.filter((m) => m.estado === "real" && ["gasto", "abono_deuda", "ahorro"].includes(m.tipo) && mesKey(m.fecha) === mes).reduce((a, m) => a + m.monto_mxn, 0);
-    const lineas = pptos.filter((p) => p.mes === mes).map((p) => { const r = rubros.find((x) => x.id === p.rubro_id); const g = r?.padre_id ? rubros.find((x) => x.id === r.padre_id) : null; const real = realMes(p.rubro_id); return { ...p, nombre: r?.nombre ?? "?", grupo: g?.nombre ?? r?.nombre ?? "?", real, resta: Math.max(0, p.monto - real) }; }).sort((a, b) => a.grupo.localeCompare(b.grupo, "es") || b.monto - a.monto);
+    const pMes = pptos.filter((p) => p.mes === mes);
+    const lineas = pMes.map((p) => { const r = rubros.find((x) => x.id === p.rubro_id); const g = r?.padre_id ? rubros.find((x) => x.id === r.padre_id) : null;
+      // una sola línea para un libro (p. ej. «Akela 29,555») representa todo ese libro: su real es todo lo gastado en el libro ese mes
+      const unicaDelLibro = p.libro !== "PERSONAL" && pMes.filter((q) => q.libro === p.libro).length === 1;
+      const real = unicaDelLibro ? realLibro(p.libro) : realMes(p.rubro_id);
+      return { ...p, nombre: unicaDelLibro ? `${r?.nombre ?? "?"} (todo ${p.libro})` : r?.nombre ?? "?", grupo: g?.nombre ?? r?.nombre ?? "?", real, resta: Math.max(0, p.monto - real) }; }).sort((a, b) => a.grupo.localeCompare(b.grupo, "es") || b.monto - a.monto);
+    // gastos reales del mes que no caen en ninguna línea (para ver de dónde sale la diferencia)
+    const cubiertos = new Set<string>(); lineas.forEach((l) => movsMes.forEach((m) => { if ((l.nombre.includes("(todo ") && libroDe(m.id) === l.libro) || m.rubro_id === l.rubro_id) cubiertos.add(m.id); }));
+    const fuera = movsMes.filter((m) => !cubiertos.has(m.id));
+    const fueraPorRubro = [...fuera.reduce((acc, m) => { const k = `${m.grupo} › ${m.rubro}`; acc.set(k, (acc.get(k) ?? 0) + m.monto_mxn); return acc; }, new Map<string, number>())].sort((a, b) => b[1] - a[1]);
     const pptoTotal = lineas.reduce((a, l) => a + l.monto, 0), restaTotal = lineas.reduce((a, l) => a + l.resta, 0), realEnPpto = lineas.reduce((a, l) => a + l.real, 0);
-    const sinPpto = realTotalMes - realEnPpto;   // gastos del mes en rubros que no están presupuestados
+    const sinPpto = fuera.reduce((a, m) => a + m.monto_mxn, 0);   // gastos del mes en rubros que no están presupuestados
     const esActualOFuturo = mes >= mesHoy;
     const cierre = esActualOFuturo ? efectivo + entradasProy - restaTotal : null;
     const guardarPpto = async (p: Presupuesto, monto: number) => { const { error } = await supabase.from("presupuestos").update({ monto }).eq("id", p.id); if (error) return aviso(error.message); setPptos((prev) => prev.map((x) => x.id === p.id ? { ...x, monto } : x)); };
@@ -79,7 +91,7 @@ export function Gastos({ initial }: { initial: GastosData }) {
                 <td className="n"><input type="number" defaultValue={l.monto || ""} onBlur={(e) => Number(e.target.value) !== l.monto && guardarPpto(l, Number(e.target.value) || 0)} style={{ width: 96, textAlign: "right", padding: "2px 4px" }} /></td>
                 <td className={"n" + (l.real > l.monto && l.monto ? " neg" : "")}>{l.real ? fmt(l.real) : "·"}</td><td className="n">{l.resta ? fmt(l.resta) : "✓"}</td>
                 <td><div style={{ height: 10, border: "1px solid var(--ink)", borderRadius: 5, background: "var(--cream)", overflow: "hidden" }}><div style={{ width: `${l.monto ? Math.min(100, (l.real / l.monto) * 100) : 0}%`, height: "100%", background: l.real > l.monto ? "var(--deu)" : "var(--aho)" }} /></div></td>
-                <td><button className="del" type="button" onClick={() => borrarPpto(l)}>✕</button></td></tr>)}
+                <td style={{ whiteSpace: "nowrap" }}>{l.resta > 0 && l.real > 0 && <button className="link" type="button" style={{ fontSize: 11 }} title="Dar por cumplida: esperado = real" onClick={() => guardarPpto(l, Math.round(l.real))}>✓ listo</button>} <button className="del" type="button" onClick={() => borrarPpto(l)}>✕</button></td></tr>)}
               {!lineas.length && <tr><td colSpan={7} className="hint">Sin presupuesto para {ml(mes)}. Agrega líneas abajo o copia de otro mes.</td></tr>}
               <tr className="tot"><td colSpan={2}>Total</td><td className="n">{fmt(pptoTotal)}</td><td className="n">{fmt(realEnPpto)}</td><td className="n">{fmt(restaTotal)}</td><td colSpan={2} /></tr>
             </tbody>
@@ -91,6 +103,8 @@ export function Gastos({ initial }: { initial: GastosData }) {
             <button className="btn sm" type="button" onClick={agregarPpto} disabled={busy}>+</button>
             {otros.length > 0 && <span style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center", fontSize: 12 }}>copiar de <select onChange={(e) => { if (e.target.value) copiarDe(e.target.value); e.target.value = ""; }} defaultValue=""><option value="">mes…</option>{otros.map((m) => <option key={m} value={m}>{ml(m)}</option>)}</select></span>}
           </div>
+          {fueraPorRubro.length > 0 && <details style={{ marginTop: 8 }}><summary style={{ cursor: "pointer", fontSize: 12 }}>Gastado este mes fuera del presupuesto: {fmt(sinPpto)} ({fueraPorRubro.length} rubros) — si alguno es un gasto esperado capturado en otro rubro, agrégalo como línea o cambia el rubro del gasto</summary>
+            <div className="tbl"><table style={{ fontSize: 12 }}><tbody>{fueraPorRubro.map(([k, v]) => <tr key={k}><td>{k}</td><td className="n">{fmt(v)}</td></tr>)}</tbody></table></div></details>}
           <p className="hint">Esperado = lo que piensas gastar en el mes por rubro; Real = lo registrado (cualquier cuenta); Falta = lo que aún no sale. El cierre asume que lo que falta se paga este mes desde cheques (los cargos a tarjeta se pagan al corte).</p>
         </>}
       </div>);
