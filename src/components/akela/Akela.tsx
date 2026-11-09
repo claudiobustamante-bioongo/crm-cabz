@@ -369,9 +369,12 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
                   {ls.map((l) => { const re = realLinea(l); const tp = planAnual(l), tr = sum(re), tpf = planFecha(l); const editable = !ro && l.pagador === "CABZ"; return (
                     <Fragment key={l.linea}>
                       <tr className={editable ? "lead" : undefined}>
-                        <td style={{ fontWeight: 600, color: "var(--ink)", whiteSpace: "nowrap" }}>{l.linea}{l.anual ? <span className="badge" style={{ marginLeft: 6 }}>anual</span> : null}{l.transferencia ? <span className="badge" style={{ background: "var(--nec)", marginLeft: 6 }}>transf.</span> : null}</td>
+                        <td style={{ fontWeight: 600, color: "var(--ink)", whiteSpace: "nowrap" }}>{l.linea}{l.anual ? <span className="badge" style={{ marginLeft: 6 }}>anual</span> : null}{l.transferencia ? <span className="badge" style={{ background: "var(--nec)", marginLeft: 6 }}>transf.</span> : null}{!ro && <> <button className="del" type="button" title="Borrar esta línea del plan (los gastos reales no se tocan)" onClick={() => borrarLinea(l)} style={{ marginLeft: 4 }}>✕</button></>}</td>
                         <td className="hint" style={{ whiteSpace: "nowrap" }}>{l.subrubro ?? "—"}</td><td>{l.pagador}</td>
-                        {l.meses.map((v, i) => <td key={i} className="n" style={{ color: l.pagador === "CABZ" ? "var(--gray-warm)" : "var(--gray-soft)" }}>{l.anual ? (i === 0 ? fmt(v) : "") : v ? fmt(v) : "·"}</td>)}
+                        {l.meses.map((v, i) => <td key={i} className="n" style={{ color: l.pagador === "CABZ" ? "var(--gray-warm)" : "var(--gray-soft)", padding: ro ? undefined : "1px 3px" }}>
+                          {ro || (l.anual && i > 0) ? (l.anual ? (i === 0 ? fmt(v) : "") : v ? fmt(v) : "·")
+                            : <input type="number" defaultValue={v || ""} placeholder="·" title={l.anual ? "presupuesto anual" : "presupuesto del mes"} onBlur={(e) => { const n = Number(e.target.value) || 0; if (n !== v) setCelda(l, i + 1, n); }} style={{ width: 66, padding: "2px 4px", textAlign: "right", fontSize: 11.5, color: "var(--gray-warm)", border: "1px dashed var(--border-soft)", background: "transparent" }} />}
+                        </td>)}
                         <td className="n" style={{ fontWeight: 700 }}>{fmt(tp)}</td>
                         <td rowSpan={editable ? 2 : 1} style={{ verticalAlign: "middle" }}>{tp ? <Barra plan={tp} real={tr} pf={tpf} w={tp} h={10} /> : null}</td>
                       </tr>
@@ -437,7 +440,7 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
           </tbody>
         </table></div>}
         {realSinLinea.length > 0 && <p className="hint">Gastos Akela {anio} sin concepto en el plan: {realSinLinea.map((r) => `${r.linea} ${fmt(r.real)}`).join(" · ")}. Agrega el concepto ligado a ese subrubro.</p>}
-        <p className="hint">{concil ? `${anio}: el real se captura en la fila «real» (conciliación con tu tabla); no toca Gastos.` : `Desde 2027 la celda «real» abre los gastos del mes: los registras como en Gastos (fecha, concepto, cuenta, meses sin intereses) y van al libro Akela con el subrubro del concepto; lo que registres en Gastos aparece aquí.`} El presupuesto es lo que sale de ti: gastos directos + depósitos a papá y mamá. Sus conceptos son informativos (en qué se va el depósito) y no suman al total. Línea punteada = dónde deberías ir hoy; rojo = por arriba del plan a la fecha.</p>
+        <p className="hint">Fila de arriba = presupuesto (editable: cambia un mes para gastos extraordinarios ya comprometidos, p. ej. un viaje que se paga en diciembre); fila «real» = lo gastado. ✕ junto al concepto borra la línea del plan. {concil ? `${anio}: el real se captura en la fila «real» (conciliación con tu tabla); no toca Gastos.` : `Desde 2027 la celda «real» abre los gastos del mes: los registras como en Gastos (fecha, concepto, cuenta, meses sin intereses) y van al libro Akela con el subrubro del concepto; lo que registres en Gastos aparece aquí.`} El presupuesto es lo que sale de ti: gastos directos + depósitos a papá y mamá. Sus conceptos son informativos (en qué se va el depósito) y no suman al total. Línea punteada = dónde deberías ir hoy; rojo = por arriba del plan a la fecha.</p>
       </div>
       <h2>3 · Aportaciones {anio} · yo vs Luis Miguel</h2>
       <div className="card">
