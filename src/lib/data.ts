@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { AjusteFiscal, AkelaData, AnaliticasData, CfdiIngreso, Deuda, MovAkela, Presupuesto, AkelaRealPlan, Asignacion, Catalogo, LibroAkela, PlanAkela, Cfdi, CfdiMensual, CfdiMini, ContabMes, ContabilidadData, Cuenta, DeduccionAnual, Evento, FacturaExt, FacturacionData, GastoSinCfdi, GastosData, IbkrMes, Ingreso, IngresosData, InversionesData, Movimiento, NetWorth, Obligacion, Rubro, TipoCambio } from "./types";
+import type { AjusteFiscal, AkelaData, AnaliticasData, CfdiIngreso, Deuda, FlujoData, MovAkela, Presupuesto, AkelaRealPlan, Asignacion, Catalogo, LibroAkela, PlanAkela, Cfdi, CfdiMensual, CfdiMini, ContabMes, ContabilidadData, Cuenta, DeduccionAnual, Evento, FacturaExt, FacturacionData, GastoSinCfdi, GastosData, IbkrMes, Ingreso, IngresosData, InversionesData, Movimiento, NetWorth, Obligacion, Rubro, TipoCambio } from "./types";
 
 const TIPOS_GASTO = ["gasto", "ahorro", "abono_deuda"];
 
@@ -67,7 +67,9 @@ export async function loadGastos(supabase: SupabaseClient, anio: number): Promis
 export async function loadIngresos(supabase: SupabaseClient, anio: number): Promise<IngresosData> {
   const desde = `${anio}-01-01`, hasta = `${anio}-12-31`;
   const hoyS = new Date().toLocaleDateString("sv-SE", { timeZone: "America/Mexico_City" }); const mesHoy = hoyS.slice(0, 7);
-  const [cuentas, pagadores, ingresos, salidas, anios, cfg, libres, { data: { user } }, chq, pptos, gastosHoy] = await Promise.all([
+  const mesesF: string[] = []; for (let i = -2; i <= 4; i++) { const d = new Date(Date.UTC(+hoyS.slice(0, 4), +hoyS.slice(5, 7) - 1 + i, 1)); mesesF.push(d.toISOString().slice(0, 7)); }
+  const fDesde = `${mesesF[0]}-01`, fHasta = `${mesesF[mesesF.length - 1]}-31`;
+  const [cuentas, pagadores, ingresos, salidas, anios, cfg, libres, { data: { user } }, chq, pptos, gastosHoy, fPptos, fGastos, fAsig, fTransf, fAhorro, fRubros, fTarj, fIng] = await Promise.all([
     supabase.from("cuentas").select("id,nombre,tipo,es_medio_pago").eq("activa", true).order("nombre"),
     supabase.from("pagadores").select("codigo,nombre").eq("activo", true),
     supabase.from("v_ingresos").select("*").gte("fecha", desde).lte("fecha", hasta).order("fecha", { ascending: false }).range(0, 4999),
@@ -80,7 +82,28 @@ export async function loadIngresos(supabase: SupabaseClient, anio: number): Prom
     supabase.from("v_saldo_cuentas").select("saldo_mxn,moneda").eq("tipo", "cheques"),
     supabase.from("presupuestos").select("mes,rubro_id,monto").gte("mes", desde).lte("mes", hasta),
     supabase.from("v_movimientos").select("rubro_id,monto_mxn").eq("tipo", "gasto").eq("estado", "real").gte("fecha", `${mesHoy}-01`).lte("fecha", hoyS).range(0, 4999),
+    supabase.from("presupuestos").select("id,mes,rubro_id,monto,libros(codigo)").gte("mes", fDesde).lte("mes", fHasta),
+    supabase.from("v_movimientos").select("id,fecha,rubro_id,grupo,rubro,monto_mxn,cuenta").eq("tipo", "gasto").eq("estado", "real").gte("fecha", fDesde).lte("fecha", hoyS).range(0, 9999),
+    supabase.from("v_asignaciones").select("movimiento_id,libro").eq("tipo", "gasto").gte("fecha", fDesde).lte("fecha", hoyS).range(0, 9999),
+    supabase.from("v_movimientos").select("fecha,monto_mxn,cuenta_destino").eq("tipo", "transferencia").eq("estado", "real").gte("fecha", fDesde).lte("fecha", hoyS).range(0, 999),
+    supabase.from("v_movimientos").select("fecha,tipo,monto_mxn,rubro").in("tipo", ["ahorro", "abono_deuda"]).eq("estado", "real").gte("fecha", fDesde).lte("fecha", hoyS).range(0, 999),
+    supabase.from("rubros").select("id,nombre,padre_id").eq("naturaleza", "gasto"),
+    supabase.from("v_saldo_cuentas").select("saldo_mxn,nombre,tipo").in("tipo", ["tarjeta_credito", "cheques"]),
+    supabase.from("v_ingresos").select("fecha,tipo,monto_mxn,proyectado").gte("fecha", fDesde).lte("fecha", fHasta).range(0, 999),
   ]);
+  const tarjNombres = new Set(((fTarj.data ?? []) as { nombre: string; tipo: string }[]).filter((c) => c.tipo === "tarjeta_credito").map((c) => c.nombre));
+  const chqNombres = new Set(((fTarj.data ?? []) as { nombre: string; tipo: string }[]).filter((c) => c.tipo === "cheques").map((c) => c.nombre));
+  const libroPorMov = new Map(((fAsig.data ?? []) as { movimiento_id: string; libro: string }[]).map((a) => [a.movimiento_id, a.libro]));
+  const flujo: Omit<FlujoData, "ingresos"> = {
+    meses: mesesF,
+    tarjetasDeuda: -((fTarj.data ?? []) as { saldo_mxn: number; tipo: string }[]).filter((c) => c.tipo === "tarjeta_credito").reduce((a, c) => a + Math.min(0, Number(c.saldo_mxn)), 0),
+    pptos: ((fPptos.data ?? []) as unknown as { id: string; mes: string; rubro_id: string; monto: number; libros: { codigo: string } | { codigo: string }[] | null }[]).map((p) => ({ id: p.id, mes: String(p.mes).slice(0, 7), rubro_id: p.rubro_id, monto: Number(p.monto), libro: (Array.isArray(p.libros) ? p.libros[0]?.codigo : p.libros?.codigo) ?? "PERSONAL" })),
+    gastos: ((fGastos.data ?? []) as { id: string; fecha: string; rubro_id: string | null; grupo: string; rubro: string; monto_mxn: number; cuenta: string }[]).map((g) => ({ mes: g.fecha.slice(0, 7), rubro_id: g.rubro_id, grupo: g.grupo, rubro: g.rubro, monto_mxn: Number(g.monto_mxn), cuenta_tipo: tarjNombres.has(g.cuenta) ? "tarjeta" : chqNombres.has(g.cuenta) ? "cheques" : "otra", libro: libroPorMov.get(g.id) ?? "PERSONAL" })),
+    pagosTarjeta: ((fTransf.data ?? []) as { fecha: string; monto_mxn: number; cuenta_destino: string | null }[]).filter((t) => t.cuenta_destino && tarjNombres.has(t.cuenta_destino)).map((t) => ({ mes: t.fecha.slice(0, 7), monto_mxn: Number(t.monto_mxn) })),
+    ahorros: ((fAhorro.data ?? []) as { fecha: string; tipo: string; monto_mxn: number; rubro: string }[]).map((a) => ({ mes: a.fecha.slice(0, 7), tipo: a.tipo, monto_mxn: Number(a.monto_mxn), rubro: a.rubro })),
+    rubros: (fRubros.data ?? []) as { id: string; nombre: string; padre_id: string | null }[],
+  };
+  const ingF = ((fIng.data ?? []) as { fecha: string; tipo: string; monto_mxn: number; proyectado: boolean }[]).filter((i) => !["reembolso", "aportacion_akela"].includes(i.tipo)).map((i) => ({ mes: i.fecha.slice(0, 7), tipo: i.tipo, monto_mxn: Number(i.monto_mxn), proyectado: !!i.proyectado }));
   const pptoMes: Record<string, number> = {}; const pptoRubroHoy: Record<string, number> = {};
   ((pptos.data ?? []) as { mes: string; rubro_id: string; monto: number }[]).forEach((p) => { const k = String(p.mes).slice(0, 7); pptoMes[k] = (pptoMes[k] ?? 0) + Number(p.monto); if (k === mesHoy) pptoRubroHoy[p.rubro_id] = (pptoRubroHoy[p.rubro_id] ?? 0) + Number(p.monto); });
   const realRubroHoy: Record<string, number> = {};
@@ -100,7 +123,7 @@ export async function loadIngresos(supabase: SupabaseClient, anio: number): Prom
     salidas: Object.entries(porMes).map(([mes, total]) => ({ mes, total })).sort((a, b) => a.mes.localeCompare(b.mes)),
     rfcPropio: cfg.data?.rfc_propio ?? null, userId: user?.id ?? "",
     cheques: ((chq.data ?? []) as { saldo_mxn: number; moneda: string }[]).filter((c) => c.moneda === "MXN").reduce((a, c) => a + Number(c.saldo_mxn), 0),
-    hoy: hoyS, pptoMes, pptoRestanteHoy,
+    hoy: hoyS, pptoMes, pptoRestanteHoy, flujo: { ...flujo, ingresos: ingF },
     cfdisLibres: ((libres.data ?? []) as Record<string, unknown>[]).map((c) => Object.fromEntries(Object.entries(c).map(([k, v]) => [k, typeof v === "string" && /^-?\d+(\.\d+)?$/.test(v) ? Number(v) : v]))) as unknown as CfdiIngreso[],
   };
 }

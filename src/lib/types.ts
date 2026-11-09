@@ -129,6 +129,18 @@ export interface IngresosData {
   hoy: string;
   pptoMes: Record<string, number>;        // presupuesto total por mes (YYYY-MM) del año
   pptoRestanteHoy: number;                // del mes en curso: suma por rubro de max(presupuesto − real, 0)
+  flujo: FlujoData;
+}
+/* datos para el flujo de caja dinámico (meses alrededor de hoy) */
+export interface FlujoData {
+  meses: string[];                        // YYYY-MM desde 2 meses atrás hasta +4
+  tarjetasDeuda: number;                  // lo que se debe hoy en tarjetas (positivo)
+  pptos: { mes: string; rubro_id: string; libro: string; monto: number; id: string }[];
+  gastos: { mes: string; rubro_id: string | null; grupo: string; rubro: string; monto_mxn: number; cuenta_tipo: string; libro: string }[];   // reales
+  pagosTarjeta: { mes: string; monto_mxn: number }[];
+  ahorros: { mes: string; tipo: string; monto_mxn: number; rubro: string }[];   // ahorro y abono_deuda reales
+  rubros: { id: string; nombre: string; padre_id: string | null }[];
+  ingresos: { mes: string; tipo: string; monto_mxn: number; proyectado: boolean }[];
 }
 
 /** Fila de ibkr_estados_mensuales (importes USD). */

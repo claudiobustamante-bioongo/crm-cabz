@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { CfdiIngreso, Ingreso, IngresosData, TipoIngreso } from "@/lib/types";
 import { subirCfdi } from "@/lib/cfdi-upload";
+import { FlujoCaja } from "./FlujoCaja";
 import { MESN, fmt, fmt2, hoy, mesKey, ml, niceStep } from "@/lib/format";
 
 const TIPOS: { k: TipoIngreso; l: string }[] = [
@@ -246,6 +247,7 @@ export function Ingresos({ initial }: { initial: IngresosData }) {
         <p className="hint">Salidas = todo lo real registrado en Gastos (incluye Akela, ahorro y deuda). Meses con ingreso proyectado en tono claro.</p>
       </div>
 
+      <FlujoCaja d={initial.flujo} cheques={initial.cheques} hoy={initial.hoy} aviso={aviso} />
       <div className="card">
         <div className="ct"><span>Liquidez mes a mes · caja</span><span className="tag">saldo inicio + entradas − salidas realizadas − salidas proyectadas = saldo fin</span></div>
         {(() => {
