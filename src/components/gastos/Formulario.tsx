@@ -15,6 +15,7 @@ export interface NuevoGasto {
   nota: string;
   repetir: boolean;      // resto del año como presupuesto
   msi: number;           // meses sin intereses (0 = no aplica); monto = total de la compra
+  foto?: File | null;    // ticket fotografiado: se adjunta como comprobante
 }
 
 interface Props {
@@ -52,6 +53,25 @@ export function Formulario({ rubros, cuentas, libros, pagadores, eventos, busy, 
   const [nuevoNombre, setNuevoNombre] = useState("");
   const [nuevoCls, setNuevoCls] = useState<Clasificacion>("G");
   const [msg, setMsg] = useState("");
+  const [leyendo, setLeyendo] = useState(false);
+  const [foto, setFoto] = useState<File | null>(null);
+  /* 📷 ticket: lo lee el modelo de visión y precarga fecha, monto, rubro y nota; tú confirmas el resto */
+  const leerTicket = async (f: File) => {
+    setLeyendo(true); setMsg("Leyendo el ticket…");
+    try {
+      const fd = new FormData(); fd.append("imagen", f);
+      const r = await fetch("/api/gastos/ocr", { method: "POST", body: fd }); const j = await r.json();
+      if (!r.ok) throw new Error(j.error ?? r.statusText);
+      if (j.fecha) setFecha(String(j.fecha));
+      if (j.monto) setMonto(String(Math.round(Number(j.monto) * 100) / 100));
+      if (j.grupo_id) { setGrupoId(j.grupo_id); setNuevo(null); }
+      if (j.rubro_id) setRubroId(j.rubro_id);
+      setNota([j.comercio, j.descripcion].filter(Boolean).join(" · "));
+      setFoto(f);
+      setMsg(`Leído: ${j.comercio ?? "ticket"} · ${j.moneda ?? "MXN"} ${j.monto ?? "?"} · ${j.rubro ?? "sin rubro"}${j.subrubro ? " › " + j.subrubro : ""}${Number(j.confianza) < 0.7 ? " · revisa, poca confianza" : ""}. Confirma cuenta y libro y agrega.`);
+    } catch (e) { setMsg("No se pudo leer: " + (e as Error).message); }
+    setLeyendo(false);
+  };
 
   const grupo = grupos.find((g) => g.id === grupoId) ?? null;
   const rubro = subs.find((s) => s.id === rubroId) ?? subs[0] ?? null;
@@ -82,7 +102,8 @@ export function Formulario({ rubros, cuentas, libros, pagadores, eventos, busy, 
     const cuenta = medios.find((c) => c.id === cuentaId);
     if (!cuenta) { setMsg("Elige con qué pagaste."); return; }
     setMsg("");
-    await onAgregar({ fecha, grupo, rubro, monto: m, cuenta, libro: libroEf, pagador, evento: eventoId || null, nota: nota.trim(), repetir, msi });
+    await onAgregar({ fecha, grupo, rubro, monto: m, cuenta, libro: libroEf, pagador, evento: eventoId || null, nota: nota.trim(), repetir, msi, foto });
+    setFoto(null);
     setMonto(""); setNota(""); setRepetir(false); setMsi(0);
   };
 
@@ -186,7 +207,10 @@ export function Formulario({ rubros, cuentas, libros, pagadores, eventos, busy, 
       </div>
       {msi > 0 && <p className="hint">Escribe el <b>total de la compra</b>; se registran {msi} cargos mensuales iguales a partir de la fecha, cada uno en su mes (como caen en la tarjeta).</p>}
       {msg && <div className="err" role="alert">{msg}</div>}
-      <div className="center"><button className="btn" type="button" onClick={agregar} disabled={busy}>+ Agregar gasto</button></div>
+      <div className="center" style={{ display: "flex", gap: 10, justifyContent: "center", alignItems: "center", flexWrap: "wrap" }}>
+        <label className="btn ghost" style={{ cursor: leyendo ? "wait" : "pointer" }} title="Foto del ticket: se lee y precarga el gasto">📷 {leyendo ? "Leyendo…" : foto ? "Ticket leído · otra foto" : "Foto del ticket"}<input type="file" accept="image/*" capture="environment" style={{ display: "none" }} disabled={leyendo} onChange={(e) => { const f = e.target.files?.[0]; if (f) leerTicket(f); e.target.value = ""; }} /></label>
+        <button className="btn" type="button" onClick={agregar} disabled={busy || leyendo}>+ Agregar gasto</button>
+      </div>
       <p className="hint" style={{ textAlign: "center" }}>Se guarda en Supabase al instante vía <code>registrar_movimiento</code>. Akela, Bioongo y Periplo se cargan a su libro automáticamente.</p>
     </div>
   );
