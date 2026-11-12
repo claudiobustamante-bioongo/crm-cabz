@@ -7,7 +7,7 @@ export interface MegSeccion { id: string; orden: number; clave: string; titulo: 
 export interface MegActivo { id: string; orden: number; categoria: string; nombre: string; institucion: string | null; numero: string | null; usuario: string | null; titular: string | null; beneficiarios: string | null; que_hacer: string | null; destino: string | null; contacto: string | null; liga: string | null; documento_path: string | null; notas: string | null; ultima_revision: string | null; updated_at: string;
   cuenta_id?: string | null; seccion_clave?: string | null; suma_asegurada?: string | null; prima?: string | null; vigencia_inicio?: string | null; vigencia_fin?: string | null; cobertura?: string | null }
 export interface MegCuenta { id: string; nombre: string; tipo: string; moneda: string; saldo: number; saldo_mxn: number; fecha: string | null }
-export interface MegalodonData { secciones: MegSeccion[]; activos: MegActivo[]; cuentas: MegCuenta[]; userId: string; listo: boolean; conSaldos: boolean }
+export interface MegalodonData { secciones: MegSeccion[]; activos: MegActivo[]; cuentas: MegCuenta[]; userId: string; listo: boolean; conSaldos: boolean; soloLectura?: boolean }
 
 const CAT: Record<string, string> = { cuenta: "Cuentas e inversiones", seguro: "Seguros", propiedad: "Propiedades", empresa: "Empresas y participaciones", contacto: "Contactos clave", documento: "Documentos", otro: "Otros" };
 const CAT_ORDEN = ["cuenta", "seguro", "propiedad", "empresa", "contacto", "documento", "otro"];
@@ -22,6 +22,7 @@ const linkify = (t: string) => t.split(/(https?:\/\/\S+)/g).map((p, i) => /^http
 
 export function Megalodon({ initial }: { initial: MegalodonData }) {
   const supabase = createClient();
+  const ro = !!initial.soloLectura;   // esposa/mamá: ven todo, no editan
   const [secs, setSecs] = useState(initial.secciones);
   const [acts, setActs] = useState(initial.activos);
   const [edit, setEdit] = useState<string | null>(null);        // id de sección o activo en edición
@@ -129,7 +130,7 @@ export function Megalodon({ initial }: { initial: MegalodonData }) {
       {secs.sort((a, b) => a.orden - b.orden).map((s, i) => (
         <Fragment key={s.id}>
           <h2>{i + 1} · {edit === s.id ? <input type="text" defaultValue={s.titulo} onBlur={(e) => e.target.value.trim() && e.target.value !== s.titulo && guardarSec(s, { titulo: e.target.value.trim() })} style={{ fontSize: "inherit", fontFamily: "inherit", width: "60%" }} /> : s.titulo}
-            <span className="no-print" style={{ fontSize: 12, fontWeight: 400, marginLeft: 10 }}><button className="link" type="button" onClick={() => setEdit(edit === s.id ? null : s.id)}>{edit === s.id ? "listo" : "editar"}</button> {edit === s.id && <button className="del" type="button" onClick={() => borrarSec(s)}>✕</button>}</span></h2>
+            {!ro && <span className="no-print" style={{ fontSize: 12, fontWeight: 400, marginLeft: 10 }}><button className="link" type="button" onClick={() => setEdit(edit === s.id ? null : s.id)}>{edit === s.id ? "listo" : "editar"}</button> {edit === s.id && <button className="del" type="button" onClick={() => borrarSec(s)}>✕</button>}</span>}</h2>
           <div className="card" id={"sec-" + s.id}>
             {edit === s.id
               ? <textarea defaultValue={s.contenido} rows={Math.max(6, s.contenido.split("\n").length + 2)} style={{ width: "100%", fontFamily: "inherit", fontSize: 14, lineHeight: 1.5, padding: 10 }} onBlur={(e) => e.target.value !== s.contenido && guardarSec(s, { contenido: e.target.value })} />
@@ -137,22 +138,22 @@ export function Megalodon({ initial }: { initial: MegalodonData }) {
             <div className="hint" style={{ marginTop: 6 }}>actualizado {s.updated_at.slice(0, 10)}</div>
           </div>
         </Fragment>))}
-      <div className="center no-print" style={{ margin: "6px 0 14px" }}><button className="btn ghost sm" type="button" onClick={nuevaSec}>+ sección</button></div>
+      {!ro && <div className="center no-print" style={{ margin: "6px 0 14px" }}><button className="btn ghost sm" type="button" onClick={nuevaSec}>+ sección</button></div>}
 
       {/* ---------- inventario ---------- */}
       <h2>{secs.length + 1} · Inventario · dónde está cada cosa</h2>
       {CAT_ORDEN.filter((c) => vis.some((a) => a.categoria === c) || !filtro).map((c) => (
         <div key={c} className="card">
-          <div className="ct"><span>{CAT[c]}</span><span className="no-print"><button className="link" type="button" onClick={() => nuevoAct(c)}>+ agregar</button></span></div>
+          <div className="ct"><span>{CAT[c]}</span>{!ro && <span className="no-print"><button className="link" type="button" onClick={() => nuevoAct(c)}>+ agregar</button></span>}</div>
           {vis.filter((a) => a.categoria === c).sort((a, b) => a.orden - b.orden).map((a) => (
             <div key={a.id} id={"act-" + a.id} style={{ borderTop: "1px solid var(--border-soft)", padding: "10px 0", scrollMarginTop: 80 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
                 <b style={{ color: "var(--ink)", fontSize: 15 }}>{edit === a.id ? <input type="text" defaultValue={a.nombre} onBlur={(e) => e.target.value.trim() && e.target.value !== a.nombre && guardarAct(a, { nombre: e.target.value.trim() })} /> : a.nombre}{a.numero && edit !== a.id ? <span className="badge" style={{ marginLeft: 8 }}>{a.numero}</span> : null}{edit !== a.id && (saldoTxt(a) || a.suma_asegurada) ? <span style={{ marginLeft: 10, fontSize: 16, fontFamily: "Fraunces, serif", fontWeight: 900 }}>{saldoTxt(a) ?? a.suma_asegurada}</span> : null}</b>
                 <span className="no-print" style={{ fontSize: 12, display: "flex", gap: 8, alignItems: "center" }}>
                   <span className="hint">revisado {a.ultima_revision ?? "—"}</span>
-                  <button className="link" type="button" onClick={() => revisado(a)} title="Marcar como revisado hoy">✓ revisado</button>
+                  {!ro && <><button className="link" type="button" onClick={() => revisado(a)} title="Marcar como revisado hoy">✓ revisado</button>
                   <button className="link" type="button" onClick={() => setEdit(edit === a.id ? null : a.id)}>{edit === a.id ? "listo" : "editar"}</button>
-                  {edit === a.id && <button className="del" type="button" onClick={() => borrarAct(a)}>✕</button>}
+                  {edit === a.id && <button className="del" type="button" onClick={() => borrarAct(a)}>✕</button>}</>}
                 </span>
               </div>
               {edit === a.id ? (

@@ -1,12 +1,13 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-export type Rol = "dueno" | "contador" | "papas" | "hermano" | null;
+export type Rol = "dueno" | "contador" | "papas" | "hermano" | "esposa" | null;
 /** Pestañas que puede ver cada rol (el dueño ve todo). */
 export const PERMISOS: Record<Exclude<Rol, null>, string[] | "*"> = {
   dueno: "*",
   contador: ["/contabilidad", "/facturacion"],
   papas: ["/akela"],
   hermano: ["/akela"],
+  esposa: ["/megalodon"],
 };
 export async function rolActual(supabase: SupabaseClient): Promise<Rol> {
   try {

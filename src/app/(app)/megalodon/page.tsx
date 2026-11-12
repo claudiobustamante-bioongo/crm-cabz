@@ -25,5 +25,5 @@ export default async function MegalodonPage() {
     const l = (led.data ?? []).find((y) => y.id === x.id); return { ...x, saldo: Number(l?.saldo ?? 0), saldo_mxn: Number(l?.saldo_mxn ?? 0), fecha: null };
   });
   const conSaldos = !!(a.data ?? []).length && "cuenta_id" in ((a.data ?? [])[0] ?? {});
-  return <Megalodon initial={{ secciones: (s.data ?? []) as MegSeccion[], activos: (a.data ?? []) as MegActivo[], cuentas, userId: user?.id ?? "", listo, conSaldos }} />;
+  return <Megalodon initial={{ secciones: (s.data ?? []) as MegSeccion[], activos: (a.data ?? []) as MegActivo[], cuentas, userId: user?.id ?? "", listo, conSaldos, soloLectura: rol !== "dueno" }} />;
 }
