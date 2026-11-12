@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "CRM CABZ",
+  title: "Enso · CRM CABZ",
   description: "CRM personal · gastos, ingresos, inversiones, facturas y Akela",
   robots: { index: false, follow: false },
 };
