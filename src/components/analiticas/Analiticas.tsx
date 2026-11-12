@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import type { AnaliticasData } from "@/lib/types";
 import { CLS_COLOR, CLS_LABEL, color, fmt, ml, niceStep } from "@/lib/format";
 import { Dona } from "@/components/gastos/Graficas";
+import { Metas, Proyeccion, IsrTentativo, Salud } from "./Extras";
 
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 const pct = (a: number, b: number) => (b ? Math.round((a / b) * 100) + " %" : "—");
@@ -137,6 +138,8 @@ export function Analiticas({ initial }: { initial: AnaliticasData }) {
         </div>
       </div>
 
+      <Salud d={d} runway={runway} tasaAhorro={tasaAhorro} deudaTotal={prestamos + tarjetas} ingAnual={ing12} />
+
       {/* ---------- 2. flujo ---------- */}
       <h2>1 · Flujo de efectivo</h2>
       <div className="card">
@@ -237,6 +240,14 @@ export function Analiticas({ initial }: { initial: AnaliticasData }) {
           </div>
         </div>
       </div>
+
+      {/* ---------- 7. metas, proyección, ISR ---------- */}
+      <h2>6 · Metas de ahorro</h2>
+      <Metas d={d} />
+      <h2>7 · A dónde llegas</h2>
+      <Proyeccion d={d} netoHoy={netoHoy} ahorroProm={ahorroProm} />
+      <h2>8 · Impuestos</h2>
+      <IsrTentativo d={d} />
     </section>
   );
 }

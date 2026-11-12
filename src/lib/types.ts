@@ -283,4 +283,11 @@ export interface AnaliticasData {
   saldosHist: { cuenta_id: string; fecha: string; saldo: number }[];          // retiro (AFORE, PPR…)
   tc: { fecha: string; tc_mxn: number }[];
   akela: { plan_ytd: number; real_ytd: number; plan_anual: number; fondo_mxn: number } | null;
+  metas: MetaAhorro[];
+  ahorros: { fecha: string; mes: string; cuenta_destino: string | null; monto_mxn: number }[];   // movimientos tipo ahorro (reales) desde el año anterior
+  cuentasDestino: { id: string; nombre: string; tipo: string }[];                                 // cuentas a las que puede ir una meta
+  fiscal: { anio: number; contab: ContabMes[]; deducciones: DeduccionAnual[]; pagos_provisionales: number; mes_cerrado: number };
+  integridad: Chequeo[];
 }
+export interface MetaAhorro { id: string; nombre: string; monto: number; periodo: "mes" | "anio"; cuenta_id: string | null; activa: boolean; orden: number }
+export interface Chequeo { nivel: "ok" | "aviso" | "error"; titulo: string; detalle: string; href?: string }

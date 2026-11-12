@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { Asignacion, CfdiMini, Clasificacion, GastosData, Movimiento, Presupuesto, Rubro } from "@/lib/types";
 import { Buscador } from "@/components/Buscador";
 import { CLS_COLOR, CLS_LABEL, color, cuentaColor, fmt, hoy, mesKey, ml, slug } from "@/lib/format";
+import { TablaFija } from "@/components/TablaFija";
 import { Formulario, type NuevoGasto } from "./Formulario";
 import { BarrasMes, Dona } from "./Graficas";
 
@@ -23,6 +24,8 @@ export function Gastos({ initial }: { initial: GastosData }) {
     return ks.at(-1) ?? "all";
   });
   const [fcta, setFcta] = useState("");
+  const [flibro, setFlibro] = useState("");
+  const [ftexto, setFtexto] = useState("");
   const [selCat, setSelCat] = useState("");
 
   const aviso = (t: string) => { setToast(t); setTimeout(() => setToast(""), 3500); };
@@ -254,9 +257,13 @@ export function Gastos({ initial }: { initial: GastosData }) {
   const subTot = subsSel.reduce((a, x) => a + x[1], 0);
 
   const lista = useMemo(() => {
-    const L = movs.filter((m) => (fmes === "all" || mesKey(m.fecha) === fmes) && (!fcta || m.cuenta === fcta) && (!selCat || m.grupo === selCat));
+    const q = ftexto.trim().toLowerCase();
+    const L = movs.filter((m) => (fmes === "all" || mesKey(m.fecha) === fmes) && (!fcta || m.cuenta === fcta) && (!selCat || m.grupo === selCat)
+      && (!flibro || asigDe(m.id).some((a) => a.libro === flibro))
+      && (!q || `${m.rubro ?? ""} ${m.grupo ?? ""} ${m.descripcion ?? ""} ${m.notas ?? ""} ${m.cuenta ?? ""} ${m.monto_mxn}`.toLowerCase().includes(q)));
     return L.sort((a, b) => b.fecha.localeCompare(a.fecha) || b.monto_mxn - a.monto_mxn);
-  }, [movs, fmes, fcta, selCat]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [movs, asigs, fmes, fcta, selCat, flibro, ftexto]);
   const listaTot = lista.filter((m) => m.estado === "real").reduce((a, m) => a + m.monto_mxn, 0);
 
   /* ---------- acciones ---------- */
@@ -395,6 +402,13 @@ export function Gastos({ initial }: { initial: GastosData }) {
             <option value="">Todas</option>
             {medios.map((c) => <option key={c}>{c}</option>)}
           </select></div>
+        <div><label htmlFor="f-libro">Libro</label>
+          <select id="f-libro" value={flibro} onChange={(e) => setFlibro(e.target.value)}>
+            <option value="">Todos</option>
+            {[...new Set(asigs.map((a) => a.libro))].sort().map((l) => <option key={l}>{l}</option>)}
+          </select></div>
+        <div style={{ flex: 1, minWidth: 160 }}><label htmlFor="f-txt">Buscar</label>
+          <input id="f-txt" type="search" value={ftexto} onChange={(e) => setFtexto(e.target.value)} placeholder="nota, rubro, monto…" /></div>
       </div>
 
       <div className="stat-row">
@@ -472,7 +486,7 @@ export function Gastos({ initial }: { initial: GastosData }) {
 
       <div className="card">
         <div className="ct"><span>Movimientos</span><span className="tag">{lista.length} movimientos · {fmt(listaTot)}</span></div>
-        <div className="tbl">
+        <TablaFija fijarUltima={false} alto="70vh">
           <table>
             <thead><tr><th>Concepto</th><th>Subconcepto</th><th>Método de pago</th><th>Fecha</th><th>Libro</th><th>Nota</th><th className="n">Monto</th><th></th></tr></thead>
             <tbody>
@@ -525,7 +539,7 @@ export function Gastos({ initial }: { initial: GastosData }) {
               )}
             </tbody>
           </table>
-        </div>
+        </TablaFija>
       </div>
 
       {toast && <div className="toast" role="status">{toast}</div>}

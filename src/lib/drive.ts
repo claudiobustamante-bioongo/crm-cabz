@@ -65,3 +65,19 @@ export async function moveFile(fileId: string, toFolderId: string, fromParents: 
   const r = await fetch(`${API}/files/${fileId}?addParents=${toFolderId}&removeParents=${fromParents.join(",")}&supportsAllDrives=true&fields=id,parents`, { method: "PATCH", headers: await hdr(), body: "{}" });
   if (!r.ok) throw new Error(`Drive mover ${r.status}: ${(await r.text()).slice(0, 200)}`);
 }
+
+/** Sube un archivo (multipart) a una carpeta; devuelve el id. */
+export async function uploadFile(folderId: string, name: string, bytes: Uint8Array | ArrayBuffer, mime: string): Promise<string> {
+  const boundary = "crmcabz" + Date.now();
+  const meta = JSON.stringify({ name, parents: [folderId] });
+  const head = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n--${boundary}\r\nContent-Type: ${mime}\r\n\r\n`;
+  const tail = `\r\n--${boundary}--`;
+  const body = new Blob([head, bytes instanceof Uint8Array ? new Uint8Array(bytes) : bytes, tail]);
+  const r = await fetch(`https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id`, { method: "POST", headers: { Authorization: `Bearer ${await token()}`, "Content-Type": `multipart/related; boundary=${boundary}` }, body });
+  if (!r.ok) throw new Error(`Drive subir ${r.status}: ${(await r.text()).slice(0, 200)}`);
+  return (await r.json()).id as string;
+}
+export async function deleteFile(fileId: string): Promise<void> {
+  const r = await fetch(`${API}/files/${fileId}?supportsAllDrives=true`, { method: "DELETE", headers: await hdr() });
+  if (!r.ok && r.status !== 404) throw new Error(`Drive borrar ${r.status}`);
+}

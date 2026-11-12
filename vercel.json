@@ -1,5 +1,6 @@
 {
   "crons": [
-    { "path": "/api/drive/sync", "schedule": "0 13 * * *" }
+    { "path": "/api/drive/sync", "schedule": "0 13 * * *" },
+    { "path": "/api/backup", "schedule": "0 11 * * 0" }
   ]
 }

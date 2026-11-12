@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { AjusteFiscal, AkelaData, AnaliticasData, CfdiIngreso, Deuda, FlujoData, MovAkela, Presupuesto, AkelaRealPlan, Asignacion, Catalogo, LibroAkela, PlanAkela, Cfdi, CfdiMensual, CfdiMini, ContabMes, ContabilidadData, Cuenta, DeduccionAnual, Evento, FacturaExt, FacturacionData, GastoSinCfdi, GastosData, IbkrMes, Ingreso, IngresosData, InversionesData, Movimiento, NetWorth, Obligacion, Rubro, TipoCambio } from "./types";
+import type { AjusteFiscal, AkelaData, AnaliticasData, CfdiIngreso, Deuda, FlujoData, MovAkela, Presupuesto, AkelaRealPlan, Asignacion, Catalogo, LibroAkela, PlanAkela, Cfdi, CfdiMensual, CfdiMini, ContabMes, ContabilidadData, Cuenta, DeduccionAnual, Evento, FacturaExt, FacturacionData, GastoSinCfdi, GastosData, IbkrMes, Ingreso, IngresosData, InversionesData, Movimiento, NetWorth, Obligacion, Rubro, TipoCambio , MetaAhorro, Chequeo} from "./types";
 
 const TIPOS_GASTO = ["gasto", "ahorro", "abono_deuda"];
 
@@ -329,6 +329,22 @@ export async function loadAnaliticas(supabase: SupabaseClient): Promise<Analitic
     supabase.from("v_libro_akela").select("mes,concepto,quien,salida_mxn").gte("fecha", `${anio}-01-01`),
     supabase.from("v_saldo_cuentas").select("id,nombre,tipo,saldo_mxn").eq("tipo", "fondo"),
   ]);
+  const mesCerrado = hoy.getMonth();   // meses completos del año (0 en enero)
+  const ultCerrado = new Date(Date.UTC(hoy.getFullYear(), hoy.getMonth(), 0)).toISOString().slice(0, 7);
+  const [metas, ahorros, contab, dedu, oblig, sinRubro, cfdiLibres, tcUlt, ibkrUlt, planSinRubro, ctasCierre, deuVenc] = await Promise.all([
+    supabase.from("metas_ahorro").select("*").eq("activa", true).order("orden").order("creado_en"),
+    supabase.from("v_movimientos").select("fecha,cuenta_destino,monto_mxn").eq("tipo", "ahorro").eq("estado", "real").gte("fecha", `${anio - 1}-01-01`).lte("fecha", hoyS).range(0, 4999),
+    supabase.from("v_contab_mensual").select("*").eq("anio", anio).order("mes"),
+    supabase.from("v_deducciones_anual").select("*").eq("anio", anio),
+    supabase.from("obligaciones_fiscales").select("obligacion,estado,monto").eq("anio", anio).ilike("obligacion", "Pago provisional%"),
+    supabase.from("v_movimientos").select("id", { count: "exact", head: true }).eq("tipo", "gasto").eq("estado", "real").is("rubro", null).gte("fecha", `${anio}-01-01`),
+    supabase.from("v_cfdi").select("uuid,total", { count: "exact" }).in("tipo", ["nomina", "emitida"]).is("movimiento_id", null).gte("fecha", `${anio}-01-01`).lte("fecha", hoyS),
+    supabase.from("tipos_cambio").select("fecha").eq("moneda", "USD").order("fecha", { ascending: false }).limit(1),
+    supabase.from("ibkr_estados_mensuales").select("cuenta_id,periodo").order("periodo", { ascending: false }),
+    supabase.from("v_plan_akela").select("linea", { count: "exact" }).eq("anio", anio).eq("pagador", "CABZ").is("rubro_id", null).eq("es_transferencia", false),
+    supabase.from("cuentas").select("nombre,tipo,fecha_saldo_inicial").eq("activa", true).in("tipo", ["cheques", "tarjeta_credito"]),
+    supabase.from("v_deudas").select("deuda,proximo_pago_fecha,pagos_restantes").lt("proximo_pago_fecha", hoyS).gt("pagos_restantes", 0),
+  ]);
   type CRow = { id: string; nombre: string; tipo: string; moneda: string; pagadores: { codigo: string; es_titular: boolean } | { codigo: string; es_titular: boolean }[] | null };
   const mias = must<CRow[]>(ctas, "cuentas").filter((c) => { const p = Array.isArray(c.pagadores) ? c.pagadores[0] : c.pagadores; return p?.es_titular; });
   const ledger = must<{ id: string; saldo: number; saldo_mxn: number }[]>(led, "saldos"), actual = must<{ cuenta_id: string; fecha: string; saldo: number }[]>(sal, "saldo_actual");
@@ -359,5 +375,50 @@ export async function loadAnaliticas(supabase: SupabaseClient): Promise<Analitic
     saldosHist: ((sh.data ?? []) as { cuenta_id: string; fecha: string; saldo: number }[]).filter((r) => miasIds.has(r.cuenta_id)).map((r) => ({ ...r, saldo: Number(r.saldo) })),
     tc: tcs,
     akela: planAnual ? { plan_ytd: planYtd, real_ytd: realYtd, plan_anual: planAnual, fondo_mxn: ((fondo.data ?? []) as { saldo_mxn: number }[]).reduce((a, f) => a + Number(f.saldo_mxn), 0) } : null,
+    metas: ((metas.data ?? []) as Record<string, unknown>[]).map(num) as unknown as MetaAhorro[],
+    ahorros: ((ahorros.data ?? []) as { fecha: string; cuenta_destino: string | null; monto_mxn: number }[]).map((a) => ({ ...a, mes: a.fecha.slice(0, 7), monto_mxn: Number(a.monto_mxn) })),
+    cuentasDestino: mias.filter((c) => ["inversion", "retiro", "fondo", "ahorro"].includes(c.tipo)).map((c) => ({ id: c.id, nombre: c.nombre, tipo: c.tipo })),
+    fiscal: {
+      anio, mes_cerrado: mesCerrado,
+      contab: ((contab.data ?? []) as Record<string, unknown>[]).map(num) as unknown as ContabMes[],
+      deducciones: ((dedu.data ?? []) as Record<string, unknown>[]).map(num) as unknown as DeduccionAnual[],
+      pagos_provisionales: ((oblig.data ?? []) as { estado: string; monto: number | null }[]).filter((o) => o.estado === "pagada").reduce((a, o) => a + Number(o.monto ?? 0), 0),
+    },
+    integridad: integridad({
+      hoy, hoyS, anio, ultCerrado, sinRubro: sinRubro.count ?? 0, cfdiLibres: cfdiLibres.count ?? 0, cfdiLibresMonto: ((cfdiLibres.data ?? []) as { total: number }[]).reduce((a, c) => a + Number(c.total), 0),
+      tcUlt: (tcUlt.data?.[0] as { fecha: string } | undefined)?.fecha ?? null,
+      ibkr: ((ibkrUlt.data ?? []) as { cuenta_id: string; periodo: string }[]).filter((r) => miasIds.has(r.cuenta_id)), cuentasInv: mias.filter((c) => c.tipo === "inversion").map((c) => ({ id: c.id, nombre: c.nombre })),
+      planSinRubro: planSinRubro.count ?? 0, ctasCierre: (ctasCierre.data ?? []) as { nombre: string; tipo: string; fecha_saldo_inicial: string | null }[],
+      deudasVencidas: ((deuVenc.data ?? []) as { deuda: string; proximo_pago_fecha: string }[]),
+      cuentas, netWorth: nw.data ? Number((nw.data as { neto_mxn: number }).neto_mxn) : null, errores: [metas, ahorros, contab, dedu, oblig].filter((r) => r.error).map((r) => r.error!.message),
+    }),
   };
+}
+
+/** Cuadres automáticos: lo que suele desviarse en silencio. */
+function integridad(x: { hoy: Date; hoyS: string; anio: number; ultCerrado: string; sinRubro: number; cfdiLibres: number; cfdiLibresMonto: number; tcUlt: string | null; ibkr: { cuenta_id: string; periodo: string }[]; cuentasInv: { id: string; nombre: string }[]; planSinRubro: number; ctasCierre: { nombre: string; tipo: string; fecha_saldo_inicial: string | null }[]; deudasVencidas: { deuda: string; proximo_pago_fecha: string }[]; cuentas: { nombre: string; tipo: string; saldo_mxn: number }[]; netWorth: number | null; errores: string[] }): Chequeo[] {
+  const out: Chequeo[] = [];
+  const dias = (f: string | null) => f ? Math.round((x.hoy.getTime() - new Date(f + "T00:00:00Z").getTime()) / 86400000) : 9999;
+  x.errores.forEach((e) => out.push({ nivel: "error", titulo: "Consulta fallida", detalle: e + (/metas_ahorro/.test(e) ? " (corre 47_metas_ahorro.sql)" : "") }));
+  // 1. cierres de saldo recientes (cheques y tarjetas)
+  x.ctasCierre.forEach((c) => { const d = dias(c.fecha_saldo_inicial); if (d > 45) out.push({ nivel: d > 90 ? "error" : "aviso", titulo: `${c.nombre}: cierre de saldo de hace ${d === 9999 ? "nunca" : d + " días"}`, detalle: "Registra el saldo real en Gastos → Cierre de saldos para que la liquidez sea confiable.", href: "/gastos" }); });
+  // 2. tarjetas con saldo positivo o cheques negativo = algo se registró al revés
+  x.cuentas.filter((c) => c.tipo === "tarjeta_credito" && c.saldo_mxn > 1).forEach((c) => out.push({ nivel: "aviso", titulo: `${c.nombre} tiene saldo a favor`, detalle: "Un pago de tarjeta mayor al gasto registrado: faltan gastos o el pago se duplicó.", href: "/gastos" }));
+  x.cuentas.filter((c) => c.tipo === "cheques" && c.saldo_mxn < 0).forEach((c) => out.push({ nivel: "error", titulo: `${c.nombre} en negativo`, detalle: "Hay salidas registradas que el saldo no cubre: falta un ingreso o un cierre de saldo.", href: "/gastos" }));
+  // 3. gastos sin rubro
+  if (x.sinRubro > 0) out.push({ nivel: "aviso", titulo: `${x.sinRubro} gasto${x.sinRubro === 1 ? "" : "s"} sin rubro en ${x.anio}`, detalle: "No entran a las analíticas por rubro ni a la caja del mes.", href: "/gastos" });
+  // 4. CFDI de ingreso sin ligar
+  if (x.cfdiLibres > 0) out.push({ nivel: x.cfdiLibresMonto > 50000 ? "error" : "aviso", titulo: `${x.cfdiLibres} CFDI de nómina/honorarios sin ligar a un ingreso`, detalle: `Suman ${Math.round(x.cfdiLibresMonto).toLocaleString("es-MX")}: el ingreso no está registrado o no se ligó (doble comprobación).`, href: "/ingresos" });
+  // 5. tipo de cambio
+  const dtc = dias(x.tcUlt); if (dtc > 5) out.push({ nivel: dtc > 15 ? "error" : "aviso", titulo: `Tipo de cambio de hace ${dtc} días`, detalle: "El cron de Banxico no está corriendo; los saldos en USD se valúan viejos.", href: "/inversiones" });
+  // 6. IBKR: falta el estado del último mes cerrado
+  x.cuentasInv.forEach((c) => { const ult = x.ibkr.find((r) => r.cuenta_id === c.id)?.periodo?.slice(0, 7) ?? null; if (!ult || ult < x.ultCerrado) out.push({ nivel: "aviso", titulo: `${c.nombre}: último estado IBKR ${ult ?? "—"}`, detalle: `Falta ${x.ultCerrado}. Sube el Flex mensual o revisa el cron.`, href: "/inversiones" }); });
+  // 7. Akela: líneas del plan sin rubro (el real no se concilia)
+  if (x.planSinRubro > 0) out.push({ nivel: "aviso", titulo: `Akela ${x.anio}: ${x.planSinRubro} línea${x.planSinRubro === 1 ? "" : "s"} del plan sin subrubro`, detalle: "Los gastos reales no se cruzan con esas líneas; asígnales subrubro en la cuadrícula.", href: "/akela" });
+  // 8. deudas con pago vencido
+  x.deudasVencidas.forEach((d) => out.push({ nivel: "aviso", titulo: `${d.deuda}: pago del ${d.proximo_pago_fecha} sin registrar`, detalle: "Registra el pago o ajusta el saldo en Gastos → Deudas.", href: "/gastos" }));
+  // 9. net worth presente
+  if (x.netWorth === null) out.push({ nivel: "error", titulo: "v_net_worth no responde", detalle: "El patrimonio no se calcula; revisa las vistas (04/44)." });
+  if (!out.length) out.push({ nivel: "ok", titulo: "Todo cuadra", detalle: "Cierres recientes, CFDI ligados, tipo de cambio al día, IBKR completo." });
+  return out.sort((a, b) => ["error", "aviso", "ok"].indexOf(a.nivel) - ["error", "aviso", "ok"].indexOf(b.nivel));
 }

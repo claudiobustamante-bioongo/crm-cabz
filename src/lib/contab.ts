@@ -88,3 +88,18 @@ export function facturasDeducibles(cfdis: Cfdi[], rubros: Rubro[], rfcPropio: st
   todas.filter((c) => c.tipo_comprobante === "E").forEach((e) => { const i = todas.find((c) => !fuera.has(c.uuid) && c.tipo_comprobante !== "E" && c.emisor_rfc === e.emisor_rfc && Math.abs(c.total_mxn - e.total_mxn) < 1 && c.fecha <= e.fecha); if (i) { fuera.add(i.uuid); fuera.add(e.uuid); } });
   return todas.filter((c) => c.tipo_comprobante !== "E").map((c) => ({ cat: catDe(c)!, c, anulada: fuera.has(c.uuid) }));
 }
+
+/* ---------- ISR anual personas físicas (tarifa art. 152 LISR) ---------- */
+/** Tarifa anual vigente (DOF; se actualiza sólo cuando la inflación acumulada supera 10 %). Límite inferior, cuota fija, % sobre excedente. */
+export const TARIFA_ANUAL: [number, number, number][] = [
+  [0.01, 0, 1.92], [8952.50, 171.88, 6.40], [75984.56, 4461.94, 10.88], [133536.08, 10723.55, 16.00], [155229.81, 14194.54, 17.92],
+  [185852.58, 19682.13, 21.36], [374837.89, 60049.40, 23.52], [590796.00, 110842.74, 30.00], [1127926.85, 271981.99, 32.00],
+  [1503902.47, 392294.17, 34.00], [4511707.38, 1414947.85, 35.00],
+];
+export const UMA_DIARIA = 117.31;   // UMA 2026 (INEGI); 5 UMA anuales = tope de deducciones personales (art. 151 último párrafo)
+export const TOPE_DEDUCCIONES_UMA = 5 * UMA_DIARIA * 365;
+export function isrAnual(base: number): number {
+  if (base <= 0) return 0;
+  const t = [...TARIFA_ANUAL].reverse().find(([li]) => base >= li) ?? TARIFA_ANUAL[0];
+  return t[1] + (base - t[0]) * (t[2] / 100);
+}
