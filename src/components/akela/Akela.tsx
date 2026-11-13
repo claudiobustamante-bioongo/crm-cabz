@@ -232,15 +232,61 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
       </div>);
   };
   /* depósito de Luis Miguel: pregunta a dónde va (fondo o una cuenta mía) */
+  /* Aportación de Luis Miguel: siempre pregunta a dónde va — al fondo (o a mi cuenta) o a gastos del presupuesto (p. ej. depósito a mamá y papá) */
+  const registrarGastosLM = async (fecha: string, filas: { linea: string; monto: number }[], nota: string) => {
+    setBusy(true);
+    try {
+      const nuevos: typeof movs = [];
+      for (const f of filas) {
+        const l = lineas.find((x) => x.linea === f.linea); if (!l?.rubro_id) throw new Error(`«${f.linea}» no tiene subrubro ligado.`);
+        const p = { fecha, tipo: "gasto", estado: "real", descripcion: `Luis Miguel → ${l.linea}`, monto: f.monto, cuenta: "Aportaciones Luis Miguel", rubro_id: l.rubro_id, notas: nota || null, asignaciones: [{ libro: "AKELA", pagador: "HAMB", porcentaje: 100 }] };
+        const { data, error } = await supabase.rpc("registrar_movimiento", { p }); if (error) throw error;
+        nuevos.push({ id: data as string, fecha, descripcion: p.descripcion, monto_mxn: f.monto, rubro_id: l.rubro_id, notas: p.notas, estado: "real", cuenta: "Aportaciones Luis Miguel", pagador: "HAMB" });
+      }
+      setMovs((prev) => [...prev, ...nuevos].sort((a, b) => a.fecha.localeCompare(b.fecha)));
+      aviso(`Luis Miguel cubrió ${filas.map((f) => `${f.linea} ${fmt(f.monto)}`).join(" + ")}. No sale de tu caja; las líneas quedan cubiertas.`);
+      setAbrirDep(false); setTimeout(() => window.location.reload(), 1500);
+    } catch (e) { aviso("No se registró: " + (e as Error).message + (/Cuenta no encontrada/.test((e as Error).message) ? " (falta la cuenta «Aportaciones Luis Miguel»)" : "")); }
+    setBusy(false);
+  };
   const DepositoLM = () => {
-    const [g, setG] = useState({ fecha: new Date().toISOString().slice(0, 10), monto: "", destino_id: initial.destinos.find((c) => c.tipo === "fondo")?.id ?? "", nota: "" });
+    const hoyS = new Date().toISOString().slice(0, 10);
+    const [g, setG] = useState({ fecha: hoyS, monto: "", destino_id: initial.destinos.find((c) => c.tipo === "fondo")?.id ?? "", nota: "" });
+    const [modo, setModo] = useState<"" | "fondo" | "gastos">("");
+    const candidatas = lineas.filter((l) => l.rubro_id && l.pagador === "CABZ");
+    const dep = (re: RegExp) => candidatas.find((l) => re.test(l.linea) || re.test(l.subrubro ?? ""))?.linea ?? "";
+    const [filas, setFilas] = useState<{ linea: string; monto: string }[]>([{ linea: dep(/mam[aá]/i), monto: "" }, { linea: dep(/pap[aá]/i), monto: "" }]);
+    const total = Number(g.monto) || 0, asignado = sum(filas.map((f) => Number(f.monto) || 0)), resta = total - asignado;
     return (
-      <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", padding: "4px 0" }}>
-        <div><label style={{ margin: "0 0 2px" }}>Fecha</label><input type="date" value={g.fecha} onChange={(e) => setG({ ...g, fecha: e.target.value })} /></div>
-        <div><label style={{ margin: "0 0 2px" }}>Monto</label><input type="number" value={g.monto} onChange={(e) => setG({ ...g, monto: e.target.value })} style={{ width: 110 }} /></div>
-        <div><label style={{ margin: "0 0 2px" }}>¿A dónde va?</label><select value={g.destino_id} onChange={(e) => setG({ ...g, destino_id: e.target.value })}>{initial.destinos.map((c) => <option key={c.id} value={c.id}>{c.tipo === "fondo" ? `${c.nombre} (fondo)` : `${c.nombre} (a mí)`}</option>)}</select></div>
-        <div><label style={{ margin: "0 0 2px" }}>Nota</label><input type="text" value={g.nota} onChange={(e) => setG({ ...g, nota: e.target.value })} style={{ width: 200 }} /></div>
-        <button className="btn sm" type="button" disabled={busy || !(Number(g.monto) > 0)} onClick={() => registrarDepLM({ ...g, monto: Number(g.monto) })}>Registrar</button>
+      <div style={{ padding: "6px 0", display: "grid", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
+          <div><label style={{ margin: "0 0 2px" }}>Fecha</label><input type="date" value={g.fecha} onChange={(e) => setG({ ...g, fecha: e.target.value })} /></div>
+          <div><label style={{ margin: "0 0 2px" }}>Monto total</label><input type="number" value={g.monto} onChange={(e) => setG({ ...g, monto: e.target.value })} style={{ width: 110 }} autoFocus /></div>
+          <div><label style={{ margin: "0 0 2px" }}>Nota</label><input type="text" value={g.nota} onChange={(e) => setG({ ...g, nota: e.target.value })} style={{ width: 200 }} placeholder="opcional" /></div>
+        </div>
+        <div><b style={{ fontSize: 13 }}>¿A dónde va este dinero?</b>
+          <div className="pills" style={{ marginTop: 4 }}>
+            <button type="button" className="pill" aria-pressed={modo === "fondo"} onClick={() => setModo("fondo")}>Al fondo o a mi cuenta</button>
+            <button type="button" className="pill" aria-pressed={modo === "gastos"} onClick={() => setModo("gastos")}>A gastos del presupuesto (mamá, papá, otros)</button>
+          </div></div>
+        {modo === "fondo" && <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
+          <div><label style={{ margin: "0 0 2px" }}>Cuenta destino</label><select value={g.destino_id} onChange={(e) => setG({ ...g, destino_id: e.target.value })}>{initial.destinos.map((c) => <option key={c.id} value={c.id}>{c.tipo === "fondo" ? `${c.nombre} (fondo)` : `${c.nombre} (a mí)`}</option>)}</select></div>
+          <button className="btn sm" type="button" disabled={busy || !(total > 0)} onClick={() => registrarDepLM({ ...g, monto: total })}>Registrar aportación</button>
+          <span className="hint">Si va al fondo cuenta como aportación de LM; si va a tu cuenta, entra a tu caja.</span>
+        </div>}
+        {modo === "gastos" && <div style={{ display: "grid", gap: 6 }}>
+          {filas.map((f, i) => <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <select value={f.linea} onChange={(e) => setFilas(filas.map((x, j) => (j === i ? { ...x, linea: e.target.value } : x)))} style={{ minWidth: 220 }}><option value="">— línea del presupuesto —</option>{candidatas.map((l) => <option key={l.linea} value={l.linea}>{l.categoria} › {l.linea}</option>)}</select>
+            <input type="number" value={f.monto} placeholder="monto" onChange={(e) => setFilas(filas.map((x, j) => (j === i ? { ...x, monto: e.target.value } : x)))} style={{ width: 110 }} />
+            <button className="del" type="button" onClick={() => setFilas(filas.filter((_, j) => j !== i))}>✕</button>
+          </div>)}
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <button className="link" type="button" onClick={() => setFilas([...filas, { linea: "", monto: "" }])}>+ otra línea</button>
+            <span className={"hint" + (resta !== 0 && total ? " neg" : "")}>{total ? `asignado ${fmt(asignado)} de ${fmt(total)}${resta ? ` · faltan ${fmt(resta)}` : " · completo"}` : "pon el monto total arriba"}</span>
+            <button className="btn sm" type="button" disabled={busy || !total || resta !== 0 || filas.some((f) => !f.linea || !(Number(f.monto) > 0))} onClick={() => registrarGastosLM(g.fecha, filas.map((f) => ({ linea: f.linea, monto: Number(f.monto) })), g.nota)}>Registrar en Gastos (pagó Luis Miguel)</button>
+          </div>
+          <span className="hint">Se registra en Gastos con libro Akela, pagador Luis Miguel y su cuenta «Aportaciones Luis Miguel»: no toca tu caja, pero cubre esas líneas del presupuesto.</span>
+        </div>}
       </div>);
   };
   /* alta de concepto dentro de un rubro: subrubro existente o nuevo, quién paga, mensual o anual */
@@ -382,6 +428,27 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
             <div key={q} className="stat"><div className="v">{fmt(sum(dep.map(planAnual)))}</div><div className="l">Depósito a {q === "CABU" ? "papá" : "mamá"} · {q === "CABU" ? "él" : "ella"} cubre {fmt(sum(ls.map(planAnual)))} (informativo)</div></div>); })}
           <div className="stat"><div className="v">{fmt(totLM)}</div><div className="l">Luis Miguel → directo al fondo{totRetLM ? ` · neto ${fmt(netoLM)}` : ""}</div></div>
         </div>
+        {mesActual > 0 && (() => {
+          const i = mesActual - 1;
+          const planM = sum(mios.map((l) => planMes(l, i))), realM = sum(mios.map((l) => realLineaYo(l)[i])) + sum(extras.map((e) => e.mesesYo[i]));
+          const peor = [...mios.map((l) => ({ n: l.linea, d: sum(realLineaYo(l)) - planFecha(l), p: planFecha(l) })), ...extras.map((e) => ({ n: `${e.subrubro} (sin ppto)`, d: sum(e.mesesYo), p: 0 }))].filter((x) => x.d > 0).sort((a, b) => b.d - a.d).slice(0, 4);
+          const bien = sum(mios.map(planFecha)) - realTotal;
+          return (
+            <div className="card" style={{ background: "var(--bone)", marginBottom: 10 }}>
+              <div className="ct"><span>Revisión · {MESN[i]} {anio}</span><span className={"tag" + (realM > planM ? " neg" : "")}>{realM > planM ? `pasado por ${fmt(realM - planM)}` : `quedan ${fmt(planM - realM)} del mes`}</span></div>
+              <div style={{ display: "flex", gap: 18, flexWrap: "wrap", alignItems: "flex-start" }}>
+                <div style={{ minWidth: 220, flex: 1 }}>
+                  <div className="hint">Este mes · plan {fmt(planM)} · real {fmt(realM)}</div>
+                  <div className="track" style={{ height: 12, marginTop: 4 }}><div className="fill" style={{ width: `${Math.min(100, planM ? (realM / planM) * 100 : 0)}%`, background: realM > planM ? "var(--neg)" : "var(--pos)" }} /></div>
+                  <div className="hint" style={{ marginTop: 6 }}>Acumulado a la fecha: {bien >= 0 ? <b className="pos">{fmt(bien)} por debajo del plan</b> : <b className="neg">{fmt(-bien)} por arriba del plan</b>} ({fmt(realTotal)} de {fmt(planAFecha)}).</div>
+                </div>
+                <div style={{ minWidth: 240, flex: 1 }}>
+                  <div className="hint" style={{ marginBottom: 2 }}>{peor.length ? "Líneas por arriba de su plan a la fecha" : "Ninguna línea por arriba de su plan a la fecha."}</div>
+                  {peor.map((x) => <div key={x.n} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "2px 0", borderTop: "1px solid var(--border-soft)" }}><span>{x.n}</span><span className="neg">+{fmt(x.d)}{x.p ? <span className="hint"> · plan {fmt(x.p)}</span> : null}</span></div>)}
+                </div>
+              </div>
+            </div>);
+        })()}
         <div className="ct"><span>Plan vs real</span>
           <span className="pills" style={{ margin: 0 }}><button type="button" className="pill" aria-pressed={vista === "cuadricula"} onClick={() => setVista("cuadricula")}>Cuadrícula</button><a className="pill" href={`/api/akela/xlsx?anio=${anio}`} title="Plan, real y gastos del año en Excel" style={{ marginLeft: 6 }}>⬇ Excel</a>{!ro && <button type="button" className="pill" aria-pressed={vista === "plan"} onClick={() => setVista("plan")}>Editar plan</button>}</span>
           {!ro && vista === "plan" && <span style={{ display: "flex", gap: 6 }}><button className="btn ghost sm" type="button" onClick={() => proponer("anual")} title={`Promedio de los 12 meses de ${anio - 1}`}>Proponer: promedio {anio - 1}</button><button className="btn ghost sm" type="button" onClick={() => proponer("ult3")} title={`Promedio de los últimos 3 meses con datos de ${anio - 1}`}>Proponer: últimos 3 meses</button></span>}</div>
@@ -425,7 +492,7 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
               {(() => { const porMesOtros = Array.from({ length: 12 }, (_, i) => sum(mios.map((l) => realLinea(l)[i] - realLineaYo(l)[i])) + sum(extras.map((e) => e.meses[i] - e.mesesYo[i]))); const t = sum(porMesOtros); return t ? <tr className="tot" style={{ color: "var(--gray-warm)" }}><td colSpan={3}>Pagaron otros (*) <span className="hint" style={{ fontWeight: 400 }}>cubre líneas, no sale de mi caja</span></td>{porMesOtros.map((v, i) => <td key={i} className="n">{v ? fmt(v) : "·"}</td>)}<td className="n">{fmt(t)}</td><td /></tr> : null; })()}
               {(() => { const l = lineas.find((x) => x.pagador === "HAMB"); const realLM = Array.from({ length: 12 }, (_, i) => porMes[i].lm + depLMFuera(i + 1)); const totReal = sum(realLM); return (
                 <Fragment>
-                  <tr className="sec"><td colSpan={17}><b>Luis Miguel</b> <span className="hint">informativo · sus depósitos</span>{!ro && <> <button className="link" type="button" style={{ fontSize: 11, marginLeft: 8 }} onClick={() => setAbrirDep(!abrirDep)}>{abrirDep ? "cancelar" : "+ depósito de Luis Miguel"}</button></>}</td></tr>
+                  <tr className="sec"><td colSpan={17}><b>Luis Miguel</b> <span className="hint">informativo · sus depósitos</span>{!ro && <> <button className="link" type="button" style={{ fontSize: 11, marginLeft: 8 }} onClick={() => setAbrirDep(!abrirDep)}>{abrirDep ? "cancelar" : "+ aportación de Luis Miguel"}</button></>}</td></tr>
                   {abrirDep && !ro && <tr><td colSpan={17} style={{ background: "var(--bone)" }}><DepositoLM /></td></tr>}
                   {l && <tr><td style={{ fontWeight: 600, color: "var(--ink)" }}>{l.linea}</td><td className="hint">{l.subrubro ?? "—"}</td><td>HAMB</td>{l.meses.map((v, i) => <td key={i} className="n" style={{ color: "var(--gray-soft)" }}>{l.anual ? (i === 0 ? fmt(v) : "") : v ? fmt(v) : "·"}</td>)}<td className="n" style={{ fontWeight: 700 }}>{fmt(planAnual(l))}</td><td /></tr>}
                   <tr className="sub"><td style={{ paddingLeft: 18 }} className="hint">real (al fondo + a mis cuentas)</td><td /><td />{realLM.map((v, i) => <td key={i} className={"n" + (v ? " pos" : "")}>{v ? fmt(v) : "·"}</td>)}<td className="n" style={{ fontWeight: 700 }}>{fmt(totReal)}</td><td>{l && planAnual(l) ? <Barra plan={planAnual(l)} real={totReal} pf={planFecha(l)} w={planAnual(l)} h={10} /> : null}</td></tr>

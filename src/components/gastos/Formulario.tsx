@@ -183,7 +183,7 @@ export function Formulario({ rubros, akelaRubroIds, cuentas, libros, pagadores, 
         </div>
         <div>
           <label htmlFor="g-pag">Pagado por</label>
-          <select id="g-pag" value={pagador} onChange={(e) => setPagador(e.target.value)}>
+          <select id="g-pag" value={pagador} onChange={(e) => { const v = e.target.value; setPagador(v); const nom = pagadores.find((p) => p.codigo === v)?.nombre ?? v; const ext = v !== "CABZ" ? medios.find((c) => c.nombre.toLowerCase().includes(nom.toLowerCase()) || c.nombre.toUpperCase().includes(v)) : null; if (ext) setCuentaId(ext.id); else if (v === "CABZ") setCuentaId(medios.find((c) => c.nombre === "AMEX")?.id ?? medios[0]?.id ?? ""); }}>
             {pagadores.map((p) => <option key={p.codigo} value={p.codigo}>{p.nombre}</option>)}
           </select>
         </div>
