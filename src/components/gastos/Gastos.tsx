@@ -220,7 +220,9 @@ export function Gastos({ initial }: { initial: GastosData }) {
   const asigDe = (id: string) => asigs.filter((a) => a.movimiento_id === id);
 
   /* ---------- derivados ---------- */
-  const reales = useMemo(() => movs.filter((m) => m.estado === "real"), [movs]);
+  /* Vista: todo lo del libro Akela se agrupa bajo el rubro «Akela» (el subrubro se conserva), aunque el rubro real sea Hogar, Transporte, etc. */
+  const movsV = useMemo(() => movs.map((m) => (m.tipo === "gasto" && m.grupo !== "Akela" && asigs.some((a) => a.movimiento_id === m.id && a.libro === "AKELA") ? { ...m, grupo: "Akela", rubro: `${m.grupo} › ${m.rubro}` } : m)), [movs, asigs]);
+  const reales = useMemo(() => movsV.filter((m) => m.estado === "real"), [movsV]);
   const meses = useMemo(() => [...new Set(reales.map((m) => mesKey(m.fecha)))].sort(), [reales]);
   const V = useMemo(
     () => reales.filter((m) => (fmes === "all" || mesKey(m.fecha) === fmes) && (!fcta || m.cuenta === fcta)),
@@ -258,12 +260,12 @@ export function Gastos({ initial }: { initial: GastosData }) {
 
   const lista = useMemo(() => {
     const q = ftexto.trim().toLowerCase();
-    const L = movs.filter((m) => (fmes === "all" || mesKey(m.fecha) === fmes) && (!fcta || m.cuenta === fcta) && (!selCat || m.grupo === selCat)
+    const L = movsV.filter((m) => (fmes === "all" || mesKey(m.fecha) === fmes) && (!fcta || m.cuenta === fcta) && (!selCat || m.grupo === selCat)
       && (!flibro || asigDe(m.id).some((a) => a.libro === flibro))
       && (!q || `${m.rubro ?? ""} ${m.grupo ?? ""} ${m.descripcion ?? ""} ${m.notas ?? ""} ${m.cuenta ?? ""} ${m.monto_mxn}`.toLowerCase().includes(q)));
     return L.sort((a, b) => b.fecha.localeCompare(a.fecha) || b.monto_mxn - a.monto_mxn);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [movs, asigs, fmes, fcta, selCat, flibro, ftexto]);
+  }, [movsV, asigs, fmes, fcta, selCat, flibro, ftexto]);
   const listaTot = lista.filter((m) => m.estado === "real").reduce((a, m) => a + m.monto_mxn, 0);
 
   /* ---------- acciones ---------- */

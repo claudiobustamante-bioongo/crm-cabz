@@ -27,8 +27,9 @@ export async function GET(req: Request) {
     if (concil) l.real[p.mes - 1] = Number(p.real_conciliado ?? 0);
     map.set(p.linea, l);
   });
-  const mesConcil = concil ? Math.max(0, ...d.plan.map((p) => (p.real_conciliado != null ? p.mes : 0))) : 0;   // 2026: conciliado manda hasta ese mes; después, Gastos
-  d.movs.forEach((m) => { if (m.estado !== "real") return; const mes = Number(m.fecha.slice(5, 7)); if (mes <= mesConcil) return; const l = [...map.values()].find((x) => x.rubro_id && x.rubro_id === m.rubro_id); if (l) l.real[mes - 1] += m.monto_mxn; });
+  // 2026: la celda conciliada manda; si está vacía, suma los gastos del libro Akela (como 2027+)
+  const concilCel = new Set(concil ? d.plan.filter((p) => p.real_conciliado != null).map((p) => `${p.linea}|${p.mes}`) : []);
+  d.movs.forEach((m) => { if (m.estado !== "real") return; const mes = Number(m.fecha.slice(5, 7)); const l = [...map.values()].find((x) => x.rubro_id && x.rubro_id === m.rubro_id); if (l && !concilCel.has(`${l.linea}|${mes}`)) l.real[mes - 1] += m.monto_mxn; });
   const lineas = [...map.values()].sort((a, b) => (a.pagador === "CABZ" ? 0 : 1) - (b.pagador === "CABZ" ? 0 : 1) || a.categoria.localeCompare(b.categoria, "es") || a.linea.localeCompare(b.linea, "es"));
 
   const wb = new ExcelJS.Workbook(); wb.creator = "CRM CABZ"; wb.created = new Date();
@@ -37,7 +38,7 @@ export async function GET(req: Request) {
   /* ---------- 1. Plan vs real ---------- */
   const ws = wb.addWorksheet(`Akela ${anio}`);
   ws.getCell("A1").value = `Presupuesto Akela ${anio} · plan vs real`; ws.getCell("A1").font = { bold: true, size: 14, color: { argb: INK } };
-  ws.getCell("A2").value = concil ? `Real = conciliación con tu tabla hasta el mes ${mesConcil}; después, gastos del libro Akela.` : "Real = gastos registrados en el libro Akela."; ws.getCell("A2").font = { italic: true, color: { argb: "FF6B6B5E" } };
+  ws.getCell("A2").value = concil ? "Real = celda conciliada con tu tabla; donde está vacía, gastos del libro Akela." : "Real = gastos registrados en el libro Akela."; ws.getCell("A2").font = { italic: true, color: { argb: "FF6B6B5E" } };
   const cols = ["Rubro", "Concepto", "Subrubro", "Quién", ...MESES.map((m) => `Plan ${m}`), "Plan año", ...MESES.map((m) => `Real ${m}`), "Real año", "Desviación"];
   const hr = ws.getRow(4); hr.values = cols; hr.font = { bold: true, color: { argb: INK } }; hr.fill = fill(HEAD); hr.height = 28; hr.alignment = { wrapText: true, vertical: "middle" };
   [18, 28, 24, 8].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
