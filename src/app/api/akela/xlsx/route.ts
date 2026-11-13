@@ -29,7 +29,14 @@ export async function GET(req: Request) {
   });
   // 2026: la celda conciliada manda; si está vacía, suma los gastos del libro Akela (como 2027+)
   const concilCel = new Set(concil ? d.plan.filter((p) => p.real_conciliado != null).map((p) => `${p.linea}|${p.mes}`) : []);
-  d.movs.forEach((m) => { if (m.estado !== "real") return; const mes = Number(m.fecha.slice(5, 7)); const l = [...map.values()].find((x) => x.rubro_id && x.rubro_id === m.rubro_id); if (l && !concilCel.has(`${l.linea}|${mes}`)) l.real[mes - 1] += m.monto_mxn; });
+  const padreDe = (id: string | null) => { const r = d.rubros.find((x) => x.id === id); return (r && d.rubros.find((x) => x.id === r.padre_id)?.nombre) ?? "Sin rubro"; };
+  d.movs.forEach((m) => {
+    if (m.estado !== "real") return; const mes = Number(m.fecha.slice(5, 7));
+    let l = [...map.values()].find((x) => x.rubro_id && x.rubro_id === m.rubro_id);
+    if (!l) { const del = [...map.values()].filter((x) => x.rubro_id && x.categoria === padreDe(m.rubro_id)); if (del.length === 1) l = del[0]; }
+    if (!l) { const k = `real · ${d.rubros.find((x) => x.id === m.rubro_id)?.nombre ?? "Sin subrubro"} (sin ppto)`; l = map.get(k) ?? { linea: k, categoria: padreDe(m.rubro_id), subrubro: null, pagador: "CABZ", transferencia: false, anual: false, rubro_id: null, plan: Array(12).fill(0), real: Array(12).fill(0) }; map.set(k, l); }
+    if (!concilCel.has(`${l.linea}|${mes}`)) l.real[mes - 1] += m.monto_mxn;
+  });
   const lineas = [...map.values()].sort((a, b) => (a.pagador === "CABZ" ? 0 : 1) - (b.pagador === "CABZ" ? 0 : 1) || a.categoria.localeCompare(b.categoria, "es") || a.linea.localeCompare(b.linea, "es"));
 
   const wb = new ExcelJS.Workbook(); wb.creator = "CRM CABZ"; wb.created = new Date();

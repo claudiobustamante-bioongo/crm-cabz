@@ -48,8 +48,26 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
   const movsDe = (l: Linea, mes: number) => movs.filter((m) => m.estado === "real" && mesDe(m.fecha) === mes && lineaDe(m.rubro_id)?.linea === l.linea);
   /* 2026: la celda conciliada a mano (tu tabla) manda; si está vacía, el real sale de Gastos como en 2027+ */
   const esConcil = (l: Linea, mes: number) => concil && l.realCon[mes - 1] != null;
-  const realDe = (l: Linea, mes: number) => esConcil(l, mes) ? (l.realCon[mes - 1] ?? 0) : sum(movsDe(l, mes).map((m) => m.monto_mxn));
+  const realDe = (l: Linea, mes: number) => esConcil(l, mes) ? (l.realCon[mes - 1] ?? 0) : sum(movsDe(l, mes).map((m) => m.monto_mxn));          // todos los pagadores: la línea queda cubierta
+  const realYoDe = (l: Linea, mes: number) => esConcil(l, mes) ? (l.realCon[mes - 1] ?? 0) : sum(movsDe(l, mes).filter((m) => (m.pagador ?? "CABZ") === "CABZ").map((m) => m.monto_mxn));   // sólo lo que salió de mí
   const realLinea = (l: Linea) => Array.from({ length: 12 }, (_, i) => realDe(l, i + 1));
+  const realLineaYo = (l: Linea) => Array.from({ length: 12 }, (_, i) => realYoDe(l, i + 1));
+  const otrosDe = (l: Linea, mes: number) => movsDe(l, mes).filter((m) => (m.pagador ?? "CABZ") !== "CABZ").map((m) => `${m.pagador} ${fmt(m.monto_mxn)}`).join(", ");
+  /* subrubros reales sin línea en el plan, agrupados por rubro padre: se muestran tal cual los registras en Gastos */
+  const padreDe = (rubroId: string | null) => { const r = initial.rubros.find((x) => x.id === rubroId); return r ? (initial.rubros.find((x) => x.id === r.padre_id)?.nombre ?? "Sin rubro") : "Sin rubro"; };
+  type Extra = { padre: string; subrubro: string; rubro_id: string | null; meses: number[]; mesesYo: number[]; otros: string[] };
+  const extras = useMemo(() => {
+    const m = new Map<string, Extra>();
+    movs.forEach((r) => {
+      if (r.estado !== "real" || !r.monto_mxn || lineaDe(r.rubro_id)) return;
+      const k = r.rubro_id ?? "∅"; const e = m.get(k) ?? { padre: padreDe(r.rubro_id), subrubro: nombreRubro(r.rubro_id) ?? "Sin subrubro", rubro_id: r.rubro_id, meses: Array(12).fill(0), mesesYo: Array(12).fill(0), otros: Array(12).fill("") };
+      const i = mesDe(r.fecha) - 1; e.meses[i] += r.monto_mxn; if ((r.pagador ?? "CABZ") === "CABZ") e.mesesYo[i] += r.monto_mxn; else e.otros[i] += `${r.pagador} ${fmt(r.monto_mxn)} `;
+      m.set(k, e);
+    });
+    return [...m.values()].sort((a, b) => a.padre.localeCompare(b.padre, "es") || a.subrubro.localeCompare(b.subrubro, "es"));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [movs, lineas]);
+  const extrasDe = (c: string) => extras.filter((e) => e.padre === c);
   const planAnual = (l: Linea) => sum(l.meses);
   const planFecha = (l: Linea) => l.anual ? (planAnual(l) * mesActual) / 12 : sum(l.meses.slice(0, mesActual));
   const planMes = (l: Linea, i: number) => l.anual ? planAnual(l) / 12 : l.meses[i];
@@ -59,16 +77,16 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
   const [gVer, setGVer] = useState<"real" | "plan">("real");       // visión general: real o presupuesto
   const [gMes, setGMes] = useState<number>(0);                      // 0 = año completo, -1 = a la fecha, n = mes
   const [gSel, setGSel] = useState("");                             // rubro seleccionado en la dona
-  const categorias = useMemo(() => [...new Set(lineas.map((l) => l.categoria ?? "Sin rubro"))].sort((a, b) => a.localeCompare(b, "es")), [lineas]);
+  const categorias = useMemo(() => [...new Set([...lineas.map((l) => l.categoria ?? "Sin rubro"), ...extras.map((e) => e.padre)])].sort((a, b) => a.localeCompare(b, "es")), [lineas, extras]);
   const padres = useMemo(() => initial.rubros.filter((r) => !r.padre_id).sort((a, b) => a.nombre.localeCompare(b.nombre, "es")), [initial.rubros]);
   const hijosDe = (padreNombre: string | null) => { const p = initial.rubros.find((r) => !r.padre_id && r.nombre === padreNombre); return p ? initial.rubros.filter((r) => r.padre_id === p.id).sort((a, b) => a.nombre.localeCompare(b.nombre, "es")) : []; };
   const nombreRubro = (id: string | null) => initial.rubros.find((r) => r.id === id)?.nombre ?? null;
   const mios = lineas.filter((l) => l.pagador === "CABZ"), ellos = lineas.filter((l) => l.pagador !== "CABZ" && l.pagador !== "HAMB");
   const planTotal = sum(mios.map(planAnual));                       // presupuesto = lo que sale de mí (gastos + depósitos)
   const planAFecha = sum(mios.map(planFecha));
-  const realTotal = sum(mios.flatMap(realLinea));
+  const realTotal = sum(mios.flatMap(realLineaYo)) + sum(extras.flatMap((e) => e.mesesYo));   // lo que salió de mí (líneas + subrubros sin línea)
   const planEllos = sum(ellos.map(planAnual));
-  const realSinLinea = useMemo(() => { const m = new Map<string, number>(); movs.forEach((r) => { if (r.estado !== "real" || !r.monto_mxn) return; if (lineaDe(r.rubro_id)) return; const k = nombreRubro(r.rubro_id) ?? "Sin subrubro"; m.set(k, (m.get(k) ?? 0) + r.monto_mxn); }); return [...m].map(([linea, real]) => ({ linea, real })); }, [movs, lineas]);
+  const realSinLinea: { linea: string; real: number }[] = [];   // ya no hay «sin concepto»: los subrubros sin línea se muestran en su rubro
 
   /* ---------- aportaciones: quién puso el dinero ---------- */
   const gastosAkela = initial.libro.filter((x) => x.concepto === "gasto");
@@ -283,19 +301,21 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
       <h2>1 · Visión general {anio}</h2>
       {(() => {
         const mesesSel = gMes === 0 ? Array.from({ length: 12 }, (_, i) => i) : gMes === -1 ? Array.from({ length: mesActual }, (_, i) => i) : [gMes - 1];
-        const valor = (l: Linea, i: number) => gVer === "real" ? realLinea(l)[i] : planMes(l, i);
-        const otro = (l: Linea, i: number) => gVer === "real" ? planMes(l, i) : realLinea(l)[i];
-        const catOf = (l: Linea) => l.categoria ?? "Sin rubro";
+        type Fila = { cat: string; linea: string; real: number[]; plan: (i: number) => number };
+        const filas: Fila[] = [...mios.map((l) => ({ cat: l.categoria ?? "Sin rubro", linea: l.linea, real: realLinea(l), plan: (i: number) => planMes(l, i) })), ...extras.map((e) => ({ cat: e.padre, linea: `${e.subrubro} (sin ppto)`, real: e.meses, plan: () => 0 }))];
+        const valor = (l: Fila, i: number) => gVer === "real" ? l.real[i] : l.plan(i);
+        const otro = (l: Fila, i: number) => gVer === "real" ? l.plan(i) : l.real[i];
+        const catOf = (l: Fila) => l.cat;
         const porCat = new Map<string, number>(); const porCatOtro = new Map<string, number>();
-        mios.forEach((l) => { const v = sum(mesesSel.map((i) => valor(l, i))), o = sum(mesesSel.map((i) => otro(l, i))); porCat.set(catOf(l), (porCat.get(catOf(l)) ?? 0) + v); porCatOtro.set(catOf(l), (porCatOtro.get(catOf(l)) ?? 0) + o); });
+        filas.forEach((l) => { const v = sum(mesesSel.map((i) => valor(l, i))), o = sum(mesesSel.map((i) => otro(l, i))); porCat.set(catOf(l), (porCat.get(catOf(l)) ?? 0) + v); porCatOtro.set(catOf(l), (porCatOtro.get(catOf(l)) ?? 0) + o); });
         const cats = [...porCat].filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]) as [string, number][];
         const tot = sum(cats.map((x) => x[1])), mx = cats[0]?.[1] || 1;
-        const subs = gSel ? mios.filter((l) => catOf(l) === gSel).map((l) => ({ linea: l.linea, v: sum(mesesSel.map((i) => valor(l, i))), o: sum(mesesSel.map((i) => otro(l, i))) })).filter((x) => x.v || x.o).sort((a, b) => b.v - a.v) : [];
+        const subs = gSel ? filas.filter((l) => catOf(l) === gSel).map((l) => ({ linea: l.linea, v: sum(mesesSel.map((i) => valor(l, i))), o: sum(mesesSel.map((i) => otro(l, i))) })).filter((x) => x.v || x.o).sort((a, b) => b.v - a.v) : [];
         const subTot = sum(subs.map((x) => x.v));
         const mesesK = Array.from({ length: 12 }, (_, i) => `${anio}-${String(i + 1).padStart(2, "0")}`);
         const matriz: Record<string, Record<string, number>> = {}; const matrizOtro: Record<string, Record<string, number>> = {};
-        mesesK.forEach((k, i) => { matriz[k] = {}; matrizOtro[k] = {}; mios.forEach((l) => { const c = catOf(l); matriz[k][c] = (matriz[k][c] ?? 0) + valor(l, i); matrizOtro[k][c] = (matrizOtro[k][c] ?? 0) + otro(l, i); }); });
-        const rubrosT = [...new Set(mios.map(catOf))].sort((a, b) => sum(mesesK.map((k) => matriz[k][b] ?? 0)) - sum(mesesK.map((k) => matriz[k][a] ?? 0)));
+        mesesK.forEach((k, i) => { matriz[k] = {}; matrizOtro[k] = {}; filas.forEach((l) => { const c = catOf(l); matriz[k][c] = (matriz[k][c] ?? 0) + valor(l, i); matrizOtro[k][c] = (matrizOtro[k][c] ?? 0) + otro(l, i); }); });
+        const rubrosT = [...new Set(filas.map(catOf))].sort((a, b) => sum(mesesK.map((k) => matriz[k][b] ?? 0)) - sum(mesesK.map((k) => matriz[k][a] ?? 0)));
         const planSel = sum(mios.flatMap((l) => mesesSel.map((i) => planMes(l, i)))), realSel = sum(mios.flatMap((l) => mesesSel.map((i) => realLinea(l)[i])));
         const etiqueta = gVer === "real" ? "Gastado" : "Presupuesto";
         return (
@@ -370,7 +390,7 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
           <TablaFija grupo="akela-grid" alto="72vh"><table className="akela-grid" style={{ fontSize: 11.5 }}>
             <thead><tr><th>Concepto</th><th>Subrubro</th><th>Quién</th>{MESN.map((m, i) => <th key={m} className="n" style={i + 1 === mesActual ? { textDecoration: "underline" } : undefined}>{m}</th>)}<th className="n">Año</th><th style={{ width: 90 }}>Avance</th></tr></thead>
             <tbody>
-              {categorias.map((c) => { const ls = lineas.filter((l) => (l.categoria ?? "Sin rubro") === c && l.pagador !== "HAMB"); const mi = ls.filter((l) => l.pagador === "CABZ"); const tp = sum(mi.map(planAnual)), tr = sum(mi.flatMap(realLinea)), tpf = sum(mi.map(planFecha)); return (
+              {categorias.map((c) => { const ls = lineas.filter((l) => (l.categoria ?? "Sin rubro") === c && l.pagador !== "HAMB"); const mi = ls.filter((l) => l.pagador === "CABZ"); const ex = extrasDe(c); const tp = sum(mi.map(planAnual)), tr = sum(mi.flatMap(realLineaYo)) + sum(ex.flatMap((e) => e.mesesYo)), tpf = sum(mi.map(planFecha)); return (
                 <Fragment key={c}>
                   <tr className="sec"><td colSpan={3}><b>{c}</b>{!ro && <> <button className="link" type="button" style={{ fontSize: 11, marginLeft: 8 }} onClick={() => setNuevaEn(nuevaEn === c ? null : c)}>{nuevaEn === c ? "cancelar" : "+ concepto"}</button></>}</td>
                     {Array.from({ length: 12 }, (_, i) => <td key={i} className="n" style={{ color: "var(--gray-soft)" }}>{(() => { const v = sum(mi.map((l) => planMes(l, i))); return v ? fmt(v) : ""; })()}</td>)}
@@ -389,16 +409,20 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
                         <td rowSpan={editable ? 2 : 1} style={{ verticalAlign: "middle" }}>{tp ? <Barra plan={tp} real={tr} pf={tpf} w={tp} h={10} /> : null}</td>
                       </tr>
                       {editable && <tr className="sub"><td style={{ paddingLeft: 18 }} className="hint">real</td><td /><td />
-                        {re.map((v, i) => { const sobre = v > planMes(l, i) && planMes(l, i) > 0; const sel = celda?.linea === l.linea && celda.mes === i + 1; return <td key={i} className="n" style={{ padding: "1px 3px" }}>{esConcil(l, i + 1)
+                        {re.map((v, i) => { const sobre = v > planMes(l, i) && planMes(l, i) > 0; const sel = celda?.linea === l.linea && celda.mes === i + 1; const ot = esConcil(l, i + 1) ? "" : otrosDe(l, i + 1); return <td key={i} className="n" style={{ padding: "1px 3px" }} title={ot ? `Pagó: ${ot}` : undefined}>{ot ? <span className="hint" style={{ fontSize: 9.5 }}>* </span> : null}{esConcil(l, i + 1)
                           ? <input type="number" defaultValue={v || ""} placeholder="·" onBlur={(e) => { const n = Number(e.target.value) || 0; if (n !== v) setRealCon(l, i + 1, n); }} style={{ width: 66, padding: "2px 4px", textAlign: "right", fontSize: 11.5, color: sobre ? "var(--neg)" : undefined, fontWeight: v ? 600 : 400 }} />
                           : <button type="button" className="link" onClick={() => setCelda2(sel ? null : { linea: l.linea, mes: i + 1 })} title="Ver / registrar gastos de este mes" style={{ width: 66, textAlign: "right", fontSize: 11.5, color: sobre ? "var(--neg)" : v ? "var(--ink)" : "var(--gray-soft)", fontWeight: v ? 600 : 400, background: sel ? "var(--cream)" : undefined, borderRadius: 4, padding: "2px 4px" }}>{v ? fmt(v) : "+"}</button>}</td>; })}
                         <td className={"n" + (tr > tpf && tpf ? " neg" : "")} style={{ fontWeight: 700 }}>{fmt(tr)}</td></tr>}
                       {editable && celda?.linea === l.linea && !esConcil(l, celda.mes) && <tr><td colSpan={17} style={{ background: "var(--bone)", padding: "6px 10px" }}><PanelGasto l={l} mes={celda.mes} /></td></tr>}
                     </Fragment>); })}
+                  {ex.map((e) => <tr key={"x" + e.subrubro} className="sub"><td style={{ paddingLeft: 18, whiteSpace: "nowrap" }} className="hint">real · <b style={{ color: "var(--ink)" }}>{e.subrubro}</b> <span title="Registrado en Gastos con este subrubro; sin línea de presupuesto">(sin ppto)</span></td><td className="hint">{e.subrubro}</td><td className="hint">{e.otros.some(Boolean) ? "varios" : "CABZ"}</td>
+                    {e.meses.map((v, i) => <td key={i} className="n" style={{ fontWeight: v ? 600 : 400, color: v ? "var(--neg)" : "var(--gray-soft)" }} title={e.otros[i] || undefined}>{v ? fmt(v) : "·"}{e.otros[i] ? <span className="hint" style={{ fontSize: 9.5 }}> *</span> : null}</td>)}
+                    <td className="n neg" style={{ fontWeight: 700 }}>{fmt(sum(e.meses))}</td><td /></tr>)}
                 </Fragment>); })}
               {!ro && <tr><td colSpan={17} style={{ background: "var(--bone)" }}>{nuevaEn === "__otro__" ? <NuevaLinea padre={null} /> : <button className="link" type="button" style={{ fontSize: 11 }} onClick={() => setNuevaEn("__otro__")}>+ concepto en otro rubro</button>}</td></tr>}
               <tr className="tot"><td colSpan={3}>Pago yo · plan</td>{Array.from({ length: 12 }, (_, i) => <td key={i} className="n">{fmt(sum(mios.map((l) => planMes(l, i))))}</td>)}<td className="n">{fmt(planTotal)}</td><td /></tr>
-              <tr className="tot"><td colSpan={3}>Pago yo · real</td>{Array.from({ length: 12 }, (_, i) => { const v = sum(mios.map((l) => realLinea(l)[i])); const p = sum(mios.map((l) => planMes(l, i))); return <td key={i} className={"n" + (v > p && p ? " neg" : "")}>{v ? fmt(v) : "·"}</td>; })}<td className="n">{fmt(realTotal)}</td><td>{planTotal ? <Barra plan={planTotal} real={realTotal} pf={planAFecha} w={planTotal} h={10} /> : null}</td></tr>
+              <tr className="tot"><td colSpan={3}>Pago yo · real <span className="hint" style={{ fontWeight: 400 }}>(sólo lo que salió de mí)</span></td>{Array.from({ length: 12 }, (_, i) => { const v = sum(mios.map((l) => realLineaYo(l)[i])) + sum(extras.map((e) => e.mesesYo[i])); const p = sum(mios.map((l) => planMes(l, i))); return <td key={i} className={"n" + (v > p && p ? " neg" : "")}>{v ? fmt(v) : "·"}</td>; })}<td className="n">{fmt(realTotal)}</td><td>{planTotal ? <Barra plan={planTotal} real={realTotal} pf={planAFecha} w={planTotal} h={10} /> : null}</td></tr>
+              {(() => { const porMesOtros = Array.from({ length: 12 }, (_, i) => sum(mios.map((l) => realLinea(l)[i] - realLineaYo(l)[i])) + sum(extras.map((e) => e.meses[i] - e.mesesYo[i]))); const t = sum(porMesOtros); return t ? <tr className="tot" style={{ color: "var(--gray-warm)" }}><td colSpan={3}>Pagaron otros (*) <span className="hint" style={{ fontWeight: 400 }}>cubre líneas, no sale de mi caja</span></td>{porMesOtros.map((v, i) => <td key={i} className="n">{v ? fmt(v) : "·"}</td>)}<td className="n">{fmt(t)}</td><td /></tr> : null; })()}
               {(() => { const l = lineas.find((x) => x.pagador === "HAMB"); const realLM = Array.from({ length: 12 }, (_, i) => porMes[i].lm + depLMFuera(i + 1)); const totReal = sum(realLM); return (
                 <Fragment>
                   <tr className="sec"><td colSpan={17}><b>Luis Miguel</b> <span className="hint">informativo · sus depósitos</span>{!ro && <> <button className="link" type="button" style={{ fontSize: 11, marginLeft: 8 }} onClick={() => setAbrirDep(!abrirDep)}>{abrirDep ? "cancelar" : "+ depósito de Luis Miguel"}</button></>}</td></tr>
@@ -449,7 +473,8 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
             <tr className="tot"><td>Pago yo</td><td /><td /><td className="n">{fmt(planTotal)}</td><td className="n">{fmt(realTotal)}</td><td className="n">{fmt(planAFecha)}</td><td className={"n " + (realTotal - planAFecha > 0 ? "neg" : "pos")}>{(realTotal - planAFecha > 0 ? "+" : "") + fmt(realTotal - planAFecha)}</td><td /></tr>
           </tbody>
         </table></div>}
-        {realSinLinea.length > 0 && <p className="hint">Gastos Akela {anio} sin concepto en el plan: {realSinLinea.map((r) => `${r.linea} ${fmt(r.real)}`).join(" · ")}. Agrega el concepto ligado a ese subrubro.</p>}
+        {realSinLinea.length > 0 && null}
+        <p className="hint">Todo gasto registrado en Gastos con libro Akela aparece aquí en su rubro: en la línea de su subrubro si existe, o como fila «real · subrubro (sin ppto)» tal cual lo capturaste. Si lo pagó otro (pagador ≠ tú), la línea queda cubierta pero no suma a «Pago yo» (marcado con *).</p>
         <p className="hint">Fila de arriba = presupuesto (editable: cambia un mes para gastos extraordinarios ya comprometidos, p. ej. un viaje que se paga en diciembre); fila «real» = lo gastado. ✕ junto al concepto borra la línea del plan. {concil ? `${anio}: el real se captura en la fila «real» (conciliación con tu tabla); no toca Gastos.` : `Desde 2027 la celda «real» abre los gastos del mes: los registras como en Gastos (fecha, concepto, cuenta, meses sin intereses) y van al libro Akela con el subrubro del concepto; lo que registres en Gastos aparece aquí.`} El presupuesto es lo que sale de ti: gastos directos + depósitos a papá y mamá. Sus conceptos son informativos (en qué se va el depósito) y no suman al total. Línea punteada = dónde deberías ir hoy; rojo = por arriba del plan a la fecha.</p>
       </div>
       <h2>3 · Aportaciones {anio} · yo vs Luis Miguel</h2>
