@@ -382,7 +382,7 @@ export function Gastos({ initial }: { initial: GastosData }) {
     <section>
       <div className="idea"><b>Cómo funciona</b>Eliges <em>rubro</em> y <em>subrubro</em>, dices con qué pagaste y cuánto. Abajo el mes se reordena: cuánto llevas, porcentaje por rubro, y cada movimiento con su etiqueta. {initial.anio}: {reales.length} movimientos reales cargados.</div>
 
-      <Formulario rubros={rubros} cuentas={initial.cuentas} libros={initial.libros} pagadores={initial.pagadores} eventos={initial.eventos} busy={busy} onAgregar={agregar} onNuevoRubro={nuevoRubro} />
+      <Formulario rubros={rubros} akelaRubroIds={initial.akelaRubroIds} cuentas={initial.cuentas} libros={initial.libros} pagadores={initial.pagadores} eventos={initial.eventos} busy={busy} onAgregar={agregar} onNuevoRubro={nuevoRubro} />
       <CajaMes />
       <PagoTarjeta />
       <Deudas />

@@ -37,7 +37,15 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
   }, [plan]);
   const [movs, setMovs] = useState(initial.movs);
   const mesDe = (f: string) => Number(f.slice(5, 7));
-  const movsDe = (l: Linea, mes: number) => movs.filter((m) => m.estado === "real" && mesDe(m.fecha) === mes && l.rubro_id && m.rubro_id === l.rubro_id);
+  /* Línea de un gasto: mismo subrubro; si no hay, la única línea de ese rubro (p. ej. gasto en «Comida» → línea «Restaurantes» si es la sola de Restaurantes / Delivery) */
+  const lineaDe = (rubroId: string | null): Linea | null => {
+    if (!rubroId) return null;
+    const exacta = lineas.find((l) => l.rubro_id === rubroId); if (exacta) return exacta;
+    const r = initial.rubros.find((x) => x.id === rubroId); const padre = r ? initial.rubros.find((x) => x.id === r.padre_id)?.nombre : null;
+    const delRubro = padre ? lineas.filter((l) => l.categoria === padre && l.rubro_id) : [];
+    return delRubro.length === 1 ? delRubro[0] : null;
+  };
+  const movsDe = (l: Linea, mes: number) => movs.filter((m) => m.estado === "real" && mesDe(m.fecha) === mes && lineaDe(m.rubro_id)?.linea === l.linea);
   /* 2026: la celda conciliada a mano (tu tabla) manda; si está vacía, el real sale de Gastos como en 2027+ */
   const esConcil = (l: Linea, mes: number) => concil && l.realCon[mes - 1] != null;
   const realDe = (l: Linea, mes: number) => esConcil(l, mes) ? (l.realCon[mes - 1] ?? 0) : sum(movsDe(l, mes).map((m) => m.monto_mxn));
@@ -60,7 +68,7 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
   const planAFecha = sum(mios.map(planFecha));
   const realTotal = sum(mios.flatMap(realLinea));
   const planEllos = sum(ellos.map(planAnual));
-  const realSinLinea = useMemo(() => { const m = new Map<string, number>(); movs.forEach((r) => { if (r.estado !== "real" || !r.monto_mxn) return; if (lineas.some((l) => l.rubro_id && r.rubro_id === l.rubro_id)) return; const k = nombreRubro(r.rubro_id) ?? "Sin subrubro"; m.set(k, (m.get(k) ?? 0) + r.monto_mxn); }); return [...m].map(([linea, real]) => ({ linea, real })); }, [movs, lineas]);
+  const realSinLinea = useMemo(() => { const m = new Map<string, number>(); movs.forEach((r) => { if (r.estado !== "real" || !r.monto_mxn) return; if (lineaDe(r.rubro_id)) return; const k = nombreRubro(r.rubro_id) ?? "Sin subrubro"; m.set(k, (m.get(k) ?? 0) + r.monto_mxn); }); return [...m].map(([linea, real]) => ({ linea, real })); }, [movs, lineas]);
 
   /* ---------- aportaciones: quién puso el dinero ---------- */
   const gastosAkela = initial.libro.filter((x) => x.concepto === "gasto");

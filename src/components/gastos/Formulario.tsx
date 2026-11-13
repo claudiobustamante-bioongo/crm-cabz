@@ -20,6 +20,7 @@ export interface NuevoGasto {
 
 interface Props {
   rubros: Rubro[];
+  akelaRubroIds?: string[];   // subrubros con línea en el plan Akela (se destacan con ★ cuando el libro es Akela)
   cuentas: Cuenta[];
   libros: Catalogo[];
   pagadores: Catalogo[];
@@ -33,11 +34,12 @@ interface Props {
 export const libroDe = (grupo: string) =>
   ({ Akela: "AKELA", Bioongo: "BIOONGO", Periplo: "PERIPLO", Cordada: "CORDADA" } as Record<string, string>)[grupo] ?? "PERSONAL";
 
-export function Formulario({ rubros, cuentas, libros, pagadores, eventos, busy, onAgregar, onNuevoRubro }: Props) {
+export function Formulario({ rubros, akelaRubroIds, cuentas, libros, pagadores, eventos, busy, onAgregar, onNuevoRubro }: Props) {
   const grupos = useMemo(() => rubros.filter((r) => !r.padre_id), [rubros]);
   const medios = useMemo(() => cuentas.filter((c) => c.es_medio_pago), [cuentas]);
 
   const [grupoId, setGrupoId] = useState(grupos[0]?.id ?? "");
+  const akSet = useMemo(() => new Set(akelaRubroIds ?? []), [akelaRubroIds]);
   const subs = useMemo(() => rubros.filter((r) => r.padre_id === grupoId), [rubros, grupoId]);
   const [rubroId, setRubroId] = useState("");
   const [monto, setMonto] = useState("");
@@ -121,7 +123,7 @@ export function Formulario({ rubros, cuentas, libros, pagadores, eventos, busy, 
         <div>
           <label htmlFor="g-sub">Subrubro <span className="h">(Netflix, Vacaciones…)</span></label>
           <select id="g-sub" value={nuevo === "sub" ? "__new" : (rubro?.id ?? "")} onChange={(e) => cambiarSub(e.target.value)}>
-            {subs.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+            {(libroEf === "AKELA" ? [...subs].sort((a, b) => Number(akSet.has(b.id)) - Number(akSet.has(a.id))) : subs).map((s) => <option key={s.id} value={s.id}>{libroEf === "AKELA" && akSet.has(s.id) ? `★ ${s.nombre}` : s.nombre}</option>)}
             <option value="__new">+ Nuevo subrubro…</option>
           </select>
         </div>

@@ -73,6 +73,7 @@ export interface GastosData {
   saldos: { id: string; nombre: string; tipo: string; moneda: string; saldo: number; fecha_saldo_inicial: string | null }[];   // cheques y tarjetas, saldo según el CRM
   presupuestos: Presupuesto[];   // del año, libro y rubro
   deudas: Deuda[];
+  akelaRubroIds: string[];              // subrubros con línea en el plan Akela del año (el formulario los destaca al elegir libro Akela)
   docsPorMov: Record<string, number>;   // comprobantes (facturas extranjeras, PDF) ligados por gasto
   ingresosMes: { mes: string; monto_mxn: number; proyectado: boolean; tipo: string }[];   // entradas del año (reales y proyectadas)
 }
