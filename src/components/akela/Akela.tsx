@@ -78,6 +78,8 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
   const [gVer, setGVer] = useState<"real" | "plan">("real");       // visión general: real o presupuesto
   const [gMes, setGMes] = useState<number>(0);                      // 0 = año completo, -1 = a la fecha, n = mes
   const [gSel, setGSel] = useState("");                             // rubro seleccionado en la dona
+  const [gPpto, setGPpto] = useState<Set<string>>(new Set());        // rubros con la fila de presupuesto desplegada (tabla por mes)
+  const [gPptoTodos, setGPptoTodos] = useState(false);
   const categorias = useMemo(() => [...new Set([...lineas.map((l) => l.categoria ?? "Sin rubro"), ...extras.map((e) => e.padre)])].sort((a, b) => a.localeCompare(b, "es")), [lineas, extras]);
   const padres = useMemo(() => initial.rubros.filter((r) => !r.padre_id).sort((a, b) => a.nombre.localeCompare(b.nombre, "es")), [initial.rubros]);
   const hijosDe = (padreNombre: string | null) => { const p = initial.rubros.find((r) => !r.padre_id && r.nombre === padreNombre); return p ? initial.rubros.filter((r) => r.padre_id === p.id).sort((a, b) => a.nombre.localeCompare(b.nombre, "es")) : []; };
@@ -404,15 +406,17 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
                   </div>))}
               </div>)}
             <div className="card">
-              <div className="ct"><span>Por mes · {etiqueta.toLowerCase()}</span><span className="tag">barras por rubro · la tabla muestra {gVer === "real" ? "real" : "presupuesto"} y debajo {gVer === "real" ? "presupuesto" : "real"}</span></div>
+              <div className="ct"><span>Por mes · {etiqueta.toLowerCase()}</span><span style={{ display: "flex", gap: 10, alignItems: "center" }}><span className="tag">barras por rubro</span><button className="link" type="button" onClick={() => setGPptoTodos(!gPptoTodos)}>{gPptoTodos ? "ocultar presupuesto" : "ver presupuesto en todos"}</button></span></div>
               <BarrasMes meses={mesesK} rubros={rubrosT} data={matriz} />
               <div className="tbl" style={{ marginTop: 12 }}><table style={{ fontSize: 12 }}>
                 <thead><tr><th>Rubro</th>{mesesK.map((k) => <th className="n" key={k}>{ml(k)}</th>)}<th className="n">Total</th><th className="n">/mes</th></tr></thead>
                 <tbody>
                   {rubrosT.map((rb) => { const vals = mesesK.map((k) => matriz[k]?.[rb] ?? 0), t = sum(vals); const ov = mesesK.map((k) => matrizOtro[k]?.[rb] ?? 0), ot = sum(ov); return (
                     <Fragment key={rb}>
-                      <tr className="lead" style={{ cursor: "pointer" }} onClick={() => setGSel(gSel === rb ? "" : rb)}><td><i style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: color(rb), border: "1.5px solid var(--ink)", marginRight: 6, verticalAlign: -1 }} />{rb}</td>{vals.map((v, i) => <td key={i} className={"n" + (gVer === "real" && ov[i] && v > ov[i] ? " neg" : "")}>{v ? fmt(v) : "·"}</td>)}<td className="n" style={{ fontWeight: 700 }}>{fmt(t)}</td><td className="n">{fmt(t / 12)}</td></tr>
-                      <tr className="sub"><td className="hint" style={{ paddingLeft: 22 }}>{gVer === "real" ? "presupuesto" : "real"}</td>{ov.map((v, i) => <td key={i} className="n" style={{ color: "var(--gray-soft)" }}>{v ? fmt(v) : "·"}</td>)}<td className="n" style={{ color: "var(--gray-soft)" }}>{fmt(ot)}</td><td className="n" style={{ color: "var(--gray-soft)" }}>{fmt(ot / 12)}</td></tr>
+                      {(() => { const abierto = gPptoTodos || gPpto.has(rb); return (<>
+                      <tr className="lead" style={{ cursor: "pointer" }} onClick={() => setGSel(gSel === rb ? "" : rb)}><td style={{ whiteSpace: "nowrap" }}><button type="button" className="link" title={abierto ? "ocultar presupuesto" : "ver presupuesto"} onClick={(e) => { e.stopPropagation(); const n = new Set(gPpto); if (n.has(rb)) n.delete(rb); else n.add(rb); setGPpto(n); }} style={{ width: 16, display: "inline-block", textDecoration: "none" }}>{abierto ? "▾" : "▸"}</button><i style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: color(rb), border: "1.5px solid var(--ink)", marginRight: 6, verticalAlign: -1 }} />{rb}</td>{vals.map((v, i) => <td key={i} className={"n" + (gVer === "real" && ov[i] && v > ov[i] ? " neg" : "")} title={gVer === "real" && ov[i] ? `presupuesto ${fmt(ov[i])}` : undefined}>{v ? fmt(v) : "·"}</td>)}<td className="n" style={{ fontWeight: 700 }}>{fmt(t)}</td><td className="n">{fmt(t / 12)}</td></tr>
+                      {abierto && <tr className="sub"><td className="hint" style={{ paddingLeft: 22 }}>{gVer === "real" ? "presupuesto" : "real"}</td>{ov.map((v, i) => <td key={i} className="n" style={{ color: "var(--gray-soft)" }}>{v ? fmt(v) : "·"}</td>)}<td className="n" style={{ color: "var(--gray-soft)" }}>{fmt(ot)}</td><td className="n" style={{ color: "var(--gray-soft)" }}>{fmt(ot / 12)}</td></tr>}
+                      </>); })()}
                     </Fragment>); })}
                   <tr className="tot"><td>Total</td>{mesesK.map((k) => <td key={k} className="n">{fmt(sum(Object.values(matriz[k] ?? {})))}</td>)}<td className="n">{fmt(sum(mesesK.map((k) => sum(Object.values(matriz[k] ?? {})))))}</td><td className="n">{fmt(sum(mesesK.map((k) => sum(Object.values(matriz[k] ?? {})))) / 12)}</td></tr>
                 </tbody>
