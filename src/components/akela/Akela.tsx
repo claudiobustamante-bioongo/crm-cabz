@@ -428,7 +428,6 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
             <div key={q} className="stat"><div className="v">{fmt(sum(dep.map(planAnual)))}</div><div className="l">Depósito a {q === "CABU" ? "papá" : "mamá"} · {q === "CABU" ? "él" : "ella"} cubre {fmt(sum(ls.map(planAnual)))} (informativo)</div></div>); })}
           <div className="stat"><div className="v">{fmt(totLM)}</div><div className="l">Luis Miguel → directo al fondo{totRetLM ? ` · neto ${fmt(netoLM)}` : ""}</div>{!ro && <button className="btn sm" type="button" style={{ marginTop: 6 }} onClick={() => { setAbrirDep(true); setTimeout(() => document.getElementById("aportacion-lm")?.scrollIntoView({ behavior: "smooth", block: "center" }), 50); }}>+ aportación de Luis Miguel</button>}</div>
         </div>
-        {abrirDep && !ro && <div id="aportacion-lm" className="card" style={{ background: "var(--bone)", marginBottom: 10 }}><div className="ct"><span>Aportación de Luis Miguel</span><button className="link" type="button" onClick={() => setAbrirDep(false)}>cerrar</button></div><DepositoLM /></div>}
         {mesActual > 0 && (() => {
           const i = mesActual - 1;
           const planM = sum(mios.map((l) => planMes(l, i))), realM = sum(mios.map((l) => realLineaYo(l)[i])) + sum(extras.map((e) => e.mesesYo[i]));
@@ -545,6 +544,10 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
         <p className="hint">Fila de arriba = presupuesto (editable: cambia un mes para gastos extraordinarios ya comprometidos, p. ej. un viaje que se paga en diciembre); fila «real» = lo gastado. ✕ junto al concepto borra la línea del plan. {concil ? `${anio}: el real se captura en la fila «real» (conciliación con tu tabla); no toca Gastos.` : `Desde 2027 la celda «real» abre los gastos del mes: los registras como en Gastos (fecha, concepto, cuenta, meses sin intereses) y van al libro Akela con el subrubro del concepto; lo que registres en Gastos aparece aquí.`} El presupuesto es lo que sale de ti: gastos directos + depósitos a papá y mamá. Sus conceptos son informativos (en qué se va el depósito) y no suman al total. Línea punteada = dónde deberías ir hoy; rojo = por arriba del plan a la fecha.</p>
       </div>
       <h2>3 · Aportaciones {anio} · yo vs Luis Miguel</h2>
+      {!ro && <div id="aportacion-lm" className="card" style={{ background: "var(--bone)" }}>
+        <div className="ct"><span>Registrar aportación de Luis Miguel</span>{abrirDep ? <button className="link" type="button" onClick={() => setAbrirDep(false)}>cerrar</button> : <button className="btn sm" type="button" onClick={() => setAbrirDep(true)}>+ aportación de Luis Miguel</button>}</div>
+        {abrirDep ? <DepositoLM /> : <p className="hint" style={{ margin: 0 }}>Cada vez que Luis Miguel ponga dinero: aquí decides si va al fondo / a tu cuenta, o a líneas del presupuesto (depósito a mamá, papá, otros gastos).</p>}
+      </div>}
       <div className="card">
         <div className="tbl"><table>
           <thead><tr><th>Mes</th><th className="n">Pagué yo (gastos + depósitos)</th><th className="n">Retiré del fondo</th><th className="n">Neto yo</th><th className="n">Luis Miguel</th><th className="n">Retiró LM</th><th className="n">Neto LM</th><th className="n">Pagaron ellos (de lo transferido)</th><th className="n">Acum. neto yo</th><th className="n">Acum. neto LM</th><th className="n">% LM</th></tr></thead>
