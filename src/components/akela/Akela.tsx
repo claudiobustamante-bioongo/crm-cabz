@@ -36,6 +36,7 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
     return [...m.values()].sort((a, b) => (a.categoria ?? "").localeCompare(b.categoria ?? "", "es") || a.linea.localeCompare(b.linea, "es"));
   }, [plan]);
   const [movs, setMovs] = useState(initial.movs);
+  const nombreRubro = (id: string | null) => initial.rubros.find((r) => r.id === id)?.nombre ?? null;
   const mesDe = (f: string) => Number(f.slice(5, 7));
   /* Línea de un gasto: mismo subrubro; si no hay, la única línea de ese rubro (p. ej. gasto en «Comida» → línea «Restaurantes» si es la sola de Restaurantes / Delivery) */
   const lineaDe = (rubroId: string | null): Linea | null => {
@@ -80,7 +81,6 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
   const categorias = useMemo(() => [...new Set([...lineas.map((l) => l.categoria ?? "Sin rubro"), ...extras.map((e) => e.padre)])].sort((a, b) => a.localeCompare(b, "es")), [lineas, extras]);
   const padres = useMemo(() => initial.rubros.filter((r) => !r.padre_id).sort((a, b) => a.nombre.localeCompare(b.nombre, "es")), [initial.rubros]);
   const hijosDe = (padreNombre: string | null) => { const p = initial.rubros.find((r) => !r.padre_id && r.nombre === padreNombre); return p ? initial.rubros.filter((r) => r.padre_id === p.id).sort((a, b) => a.nombre.localeCompare(b.nombre, "es")) : []; };
-  const nombreRubro = (id: string | null) => initial.rubros.find((r) => r.id === id)?.nombre ?? null;
   const mios = lineas.filter((l) => l.pagador === "CABZ"), ellos = lineas.filter((l) => l.pagador !== "CABZ" && l.pagador !== "HAMB");
   const planTotal = sum(mios.map(planAnual));                       // presupuesto = lo que sale de mí (gastos + depósitos)
   const planAFecha = sum(mios.map(planFecha));
