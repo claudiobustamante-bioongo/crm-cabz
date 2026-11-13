@@ -38,7 +38,10 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
   const [movs, setMovs] = useState(initial.movs);
   const mesDe = (f: string) => Number(f.slice(5, 7));
   const movsDe = (l: Linea, mes: number) => movs.filter((m) => m.estado === "real" && mesDe(m.fecha) === mes && l.rubro_id && m.rubro_id === l.rubro_id);
-  const realDe = (l: Linea, mes: number) => concil ? (l.realCon[mes - 1] ?? 0) : sum(movsDe(l, mes).map((m) => m.monto_mxn));
+  /* 2026: los meses conciliados a mano (tu tabla) mandan; los meses posteriores salen de Gastos como en 2027+ */
+  const mesConcil = useMemo(() => (concil ? Math.max(0, ...lineas.flatMap((l) => l.realCon.map((v, i) => (v != null ? i + 1 : 0)))) : 0), [lineas, concil]);
+  const esConcil = (mes: number) => concil && mes <= mesConcil;
+  const realDe = (l: Linea, mes: number) => esConcil(mes) ? (l.realCon[mes - 1] ?? 0) : sum(movsDe(l, mes).map((m) => m.monto_mxn));
   const realLinea = (l: Linea) => Array.from({ length: 12 }, (_, i) => realDe(l, i + 1));
   const planAnual = (l: Linea) => sum(l.meses);
   const planFecha = (l: Linea) => l.anual ? (planAnual(l) * mesActual) / 12 : sum(l.meses.slice(0, mesActual));
@@ -58,7 +61,8 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
   const planAFecha = sum(mios.map(planFecha));
   const realTotal = sum(mios.flatMap(realLinea));
   const planEllos = sum(ellos.map(planAnual));
-  const realSinLinea = useMemo(() => { if (concil) return []; const m = new Map<string, number>(); movs.forEach((r) => { if (r.estado !== "real" || !r.monto_mxn) return; if (lineas.some((l) => l.rubro_id && r.rubro_id === l.rubro_id)) return; const k = nombreRubro(r.rubro_id) ?? "Sin subrubro"; m.set(k, (m.get(k) ?? 0) + r.monto_mxn); }); return [...m].map(([linea, real]) => ({ linea, real })); }, [movs, lineas, concil]);
+  const realSinLinea = useMemo(() => { const m = new Map<string, number>(); movs.forEach((r) => { if (r.estado !== "real" || !r.monto_mxn || esConcil(mesDe(r.fecha))) return; if (lineas.some((l) => l.rubro_id && r.rubro_id === l.rubro_id)) return; const k = nombreRubro(r.rubro_id) ?? "Sin subrubro"; m.set(k, (m.get(k) ?? 0) + r.monto_mxn); }); return [...m].map(([linea, real]) => ({ linea, real })); // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [movs, lineas, concil, mesConcil]);
 
   /* ---------- aportaciones: quién puso el dinero ---------- */
   const gastosAkela = initial.libro.filter((x) => x.concepto === "gasto");
@@ -379,11 +383,11 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
                         <td rowSpan={editable ? 2 : 1} style={{ verticalAlign: "middle" }}>{tp ? <Barra plan={tp} real={tr} pf={tpf} w={tp} h={10} /> : null}</td>
                       </tr>
                       {editable && <tr className="sub"><td style={{ paddingLeft: 18 }} className="hint">real</td><td /><td />
-                        {re.map((v, i) => { const sobre = v > planMes(l, i) && planMes(l, i) > 0; const sel = celda?.linea === l.linea && celda.mes === i + 1; return <td key={i} className="n" style={{ padding: "1px 3px" }}>{concil
+                        {re.map((v, i) => { const sobre = v > planMes(l, i) && planMes(l, i) > 0; const sel = celda?.linea === l.linea && celda.mes === i + 1; return <td key={i} className="n" style={{ padding: "1px 3px" }}>{esConcil(i + 1)
                           ? <input type="number" defaultValue={v || ""} placeholder="·" onBlur={(e) => { const n = Number(e.target.value) || 0; if (n !== v) setRealCon(l, i + 1, n); }} style={{ width: 66, padding: "2px 4px", textAlign: "right", fontSize: 11.5, color: sobre ? "var(--neg)" : undefined, fontWeight: v ? 600 : 400 }} />
                           : <button type="button" className="link" onClick={() => setCelda2(sel ? null : { linea: l.linea, mes: i + 1 })} title="Ver / registrar gastos de este mes" style={{ width: 66, textAlign: "right", fontSize: 11.5, color: sobre ? "var(--neg)" : v ? "var(--ink)" : "var(--gray-soft)", fontWeight: v ? 600 : 400, background: sel ? "var(--cream)" : undefined, borderRadius: 4, padding: "2px 4px" }}>{v ? fmt(v) : "+"}</button>}</td>; })}
                         <td className={"n" + (tr > tpf && tpf ? " neg" : "")} style={{ fontWeight: 700 }}>{fmt(tr)}</td></tr>}
-                      {editable && !concil && celda?.linea === l.linea && <tr><td colSpan={17} style={{ background: "var(--bone)", padding: "6px 10px" }}><PanelGasto l={l} mes={celda.mes} /></td></tr>}
+                      {editable && celda?.linea === l.linea && !esConcil(celda.mes) && <tr><td colSpan={17} style={{ background: "var(--bone)", padding: "6px 10px" }}><PanelGasto l={l} mes={celda.mes} /></td></tr>}
                     </Fragment>); })}
                 </Fragment>); })}
               {!ro && <tr><td colSpan={17} style={{ background: "var(--bone)" }}>{nuevaEn === "__otro__" ? <NuevaLinea padre={null} /> : <button className="link" type="button" style={{ fontSize: 11 }} onClick={() => setNuevaEn("__otro__")}>+ concepto en otro rubro</button>}</td></tr>}
