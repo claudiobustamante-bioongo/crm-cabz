@@ -49,3 +49,4 @@ supabase/40b_megalodon_seed.sql
 supabase/42b_caja_nov_2026.sql
 
 !.env.example
+supabase/48b_fusion_rubros.sql
