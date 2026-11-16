@@ -88,6 +88,16 @@ export function Formulario({ rubros, akelaRubroIds, cuentas, libros, pagadores, 
     setNuevo(null); setRubroId(v);
   };
 
+  /* buscador de rubro: escribe «gasol» y elige «Transporte › Gasolina» sin recorrer los dos selects */
+  const [q, setQ] = useState("");
+  const norm = (t: string) => t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const hits = useMemo(() => {
+    const n = norm(q.trim()); if (n.length < 2) return [];
+    return rubros.filter((r) => r.padre_id).map((r) => ({ r, g: rubros.find((x) => x.id === r.padre_id) })).filter(({ r, g }) => g && (norm(r.nombre).includes(n) || norm(g.nombre).includes(n)))
+      .sort((a, b) => Number(norm(b.r.nombre).startsWith(n)) - Number(norm(a.r.nombre).startsWith(n)) || a.r.nombre.localeCompare(b.r.nombre, "es")).slice(0, 8);
+  }, [q, rubros]);
+  const elegir = (sub: Rubro) => { setNuevo(null); setGrupoId(sub.padre_id!); setRubroId(sub.id); setLibro(""); setQ(""); };
+
   const crear = async () => {
     const n = nuevoNombre.trim();
     if (!n) return;
@@ -112,6 +122,15 @@ export function Formulario({ rubros, akelaRubroIds, cuentas, libros, pagadores, 
   return (
     <div className={"card" + (busy ? " spin" : "")}>
       <div className="ct">Registrar un gasto</div>
+      <div style={{ position: "relative", marginBottom: 8 }}>
+        <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="🔍 Buscar rubro… (gasolina, súper, farmacia)" aria-label="Buscar rubro" style={{ width: "100%" }}
+          onKeyDown={(e) => { if (e.key === "Enter" && hits[0]) { e.preventDefault(); elegir(hits[0].r); } if (e.key === "Escape") setQ(""); }} />
+        {hits.length > 0 && <div style={{ position: "absolute", zIndex: 5, left: 0, right: 0, top: "100%", background: "var(--paper, #fff)", border: "1px solid var(--border-soft)", borderRadius: 8, boxShadow: "0 6px 18px rgba(0,0,0,.08)", overflow: "hidden" }}>
+          {hits.map(({ r, g }, i) => <button key={r.id} type="button" onClick={() => elegir(r)} style={{ display: "flex", justifyContent: "space-between", width: "100%", textAlign: "left", padding: "7px 10px", background: i === 0 ? "var(--bone)" : "transparent", border: 0, borderTop: i ? "1px solid var(--border-soft)" : 0, cursor: "pointer", fontSize: 13 }}>
+            <span><span className="hint">{g!.emoji ? g!.emoji + " " : ""}{g!.nombre} › </span><b>{r.nombre}</b></span>{akSet.has(r.id) && <span className="hint">★ Akela</span>}
+          </button>)}
+        </div>}
+      </div>
       <div className="g3">
         <div>
           <label htmlFor="g-cat">Rubro</label>
