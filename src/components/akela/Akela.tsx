@@ -346,7 +346,12 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
         </div>
       </div>
 
-      <h2>1 · Visión general {anio}</h2>
+      <h2 style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>1 · Visión general {anio}
+        <span className="pills" style={{ margin: 0, fontSize: 13, fontWeight: 500 }}>
+          <button type="button" className="pill" aria-pressed={gVer === "real"} onClick={() => setGVer("real")}>Gastado</button>
+          <button type="button" className="pill" aria-pressed={gVer === "plan"} onClick={() => { setGVer("plan"); if (gMes === -1) setGMes(0); }}>Presupuesto</button>
+        </span>
+      </h2>
       {(() => {
         const mesesSel = gMes === 0 ? Array.from({ length: 12 }, (_, i) => i) : gMes === -1 ? Array.from({ length: mesActual }, (_, i) => i) : [gMes - 1];
         type Fila = { cat: string; linea: string; real: number[]; plan: (i: number) => number };
@@ -371,7 +376,7 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
             <div className="card">
               <div className="g4" style={{ gridTemplateColumns: "1fr 1fr 1fr 1fr" }}>
                 <div><label htmlFor="g-anio">Año</label><select id="g-anio" value={anio} onChange={(e) => router.push(`/akela?anio=${e.target.value}`)}>{initial.anios.map((a) => <option key={a} value={a}>{a}</option>)}</select></div>
-                <div><label htmlFor="g-ver">Ver</label><select id="g-ver" value={gVer} onChange={(e) => setGVer(e.target.value as "real" | "plan")}><option value="real">Gastos reales</option><option value="plan">Presupuesto</option></select></div>
+                <div><label>Vista</label><div className="hint" style={{ paddingTop: 8 }}>{gVer === "plan" ? "Presupuesto del año: dona, barras y tabla muestran lo planeado; ▸ despliega lo gastado." : "Lo gastado; ▸ en cada rubro despliega su presupuesto."}</div></div>
                 <div><label htmlFor="g-mes">Periodo</label><select id="g-mes" value={gMes} onChange={(e) => setGMes(Number(e.target.value))}><option value={0}>Año completo</option>{mesActual > 0 && <option value={-1}>A la fecha (ene–{MESN[mesActual - 1]})</option>}{MESN.map((m, i) => <option key={m} value={i + 1}>{m} {String(anio).slice(2)}</option>)}</select></div>
                 <div><label>Quién</label><div className="hint" style={{ paddingTop: 8 }}>Pago yo (gastos + depósitos). Papá y mamá: informativo en la cuadrícula.</div></div>
               </div>
