@@ -74,6 +74,7 @@ export interface GastosData {
   presupuestos: Presupuesto[];   // del año, libro y rubro
   deudas: Deuda[];
   akelaRubroIds: string[];              // subrubros con línea en el plan Akela del año (el formulario los destaca al elegir libro Akela)
+  linksPorMov: Record<string, { url: string; label: string }[]>;   // facturas ligadas con liga a Drive (CFDI y extranjeras)
   docsPorMov: Record<string, number>;   // comprobantes (facturas extranjeras, PDF) ligados por gasto
   ingresosMes: { mes: string; monto_mxn: number; proyectado: boolean; tipo: string }[];   // entradas del año (reales y proyectadas)
 }
@@ -177,7 +178,9 @@ export interface InversionesData {
 /** Fila de v_cfdi. */
 export interface Cfdi {
   uuid: string;
-  tipo: "emitida" | "recibida" | "nomina";
+  tipo: "emitida" | "recibida" | "nomina" | "pago";
+  pagada_en?: string | null;          // factura PPD liquidada por un complemento
+  relacionados?: string[] | null;     // complemento: UUIDs que paga
   tipo_comprobante: string | null;
   fecha: string;
   serie: string | null; folio: string | null;

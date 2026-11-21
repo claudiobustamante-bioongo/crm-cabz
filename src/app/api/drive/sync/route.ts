@@ -62,9 +62,10 @@ async function sync(db: SupabaseClient, userId: string, rfc: string | null) {
         emisor_rfc: p.emisor_rfc, emisor_nombre: p.emisor_nombre, receptor_rfc: p.receptor_rfc, receptor_nombre: p.receptor_nombre,
         concepto: p.concepto, conceptos: p.conceptos, uso_cfdi: p.uso_cfdi, subtotal: p.subtotal, descuento: p.descuento, iva: p.iva, ret_isr: p.ret_isr, ret_iva: p.ret_iva, otros_impuestos: p.otros_impuestos, total: p.total,
         moneda: p.moneda, tc: p.tc, forma_pago: p.forma_pago, metodo_pago: p.metodo_pago, xml_documento_id: dx.id, link_drive: file.webViewLink ?? null,
-        estado: p.tipo === "recibida" ? "nueva" : "sin_gasto", confianza: "alta (XML)", notas: `Drive: ${path}`,
+        estado: p.tipo === "recibida" ? "nueva" : "sin_gasto", confianza: "alta (XML)", notas: `Drive: ${path}`, relacionados: p.relacionados ?? null,
       });
       if (e3) throw e3;
+      if (p.tipo === "pago" && p.relacionados?.length) await db.from("cfdi").update({ pagada_en: p.fecha }).eq("user_id", userId).in("uuid", p.relacionados);
       existentes.add(p.uuid);
       await log(file, path, "cfdi", { cfdi_uuid: p.uuid, documento_id: dx.id, mes: p.fecha.slice(0, 7) + "-01" });
       res.cfdi++;

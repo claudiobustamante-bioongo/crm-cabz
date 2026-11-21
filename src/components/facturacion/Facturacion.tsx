@@ -9,8 +9,8 @@ import { parseCfdi, FORMA_PAGO } from "@/lib/cfdi";
 import { TablaFija } from "@/components/TablaFija";
 import { Buscador } from "@/components/Buscador";
 
-const TIPO_LABEL = { emitida: "Emitida", recibida: "Recibida", nomina: "Nómina" } as const;
-const TIPO_COLOR = { emitida: "var(--c6)", recibida: "var(--aho)", nomina: "var(--nec)" } as const;
+const TIPO_LABEL = { emitida: "Emitida", recibida: "Recibida", nomina: "Nómina", pago: "Pago (compl.)" } as const;
+const TIPO_COLOR = { emitida: "var(--c6)", recibida: "var(--aho)", nomina: "var(--nec)", pago: "var(--gold)" } as const;
 const ESTADO = { nueva: ["Nueva", "var(--gus)"], ligada: ["Ligada", "var(--nec)"], revisar: ["Revisar", "var(--deu)"], sin_gasto: ["Sin gasto", "var(--gray-soft)"] } as const;
 const DED_LABEL: Record<string, string> = { gmm: "Primas de gastos médicos mayores", medico: "Honorarios médicos, dentales y hospital", ppr: "Aportaciones a PPR / AFORE voluntaria", funeral: "Gastos funerarios", colegiatura: "Colegiaturas", hipoteca: "Intereses hipotecarios", donativo: "Donativos" };
 
@@ -67,10 +67,14 @@ export function Facturacion({ initial, vista = "resumen", filtro, soloLectura = 
             emisor_rfc: p.emisor_rfc, emisor_nombre: p.emisor_nombre, receptor_rfc: p.receptor_rfc, receptor_nombre: p.receptor_nombre,
             concepto: p.concepto, conceptos: p.conceptos, uso_cfdi: p.uso_cfdi, subtotal: p.subtotal, descuento: p.descuento, iva: p.iva, ret_isr: p.ret_isr, ret_iva: p.ret_iva, otros_impuestos: p.otros_impuestos, total: p.total,
             moneda: p.moneda, tc: p.tc, forma_pago: p.forma_pago, metodo_pago: p.metodo_pago, xml_documento_id: dx.id, pdf_documento_id: pdfId,
-            estado: p.tipo === "nomina" || p.tipo === "emitida" ? "sin_gasto" : "nueva",
+            estado: p.tipo === "nomina" || p.tipo === "emitida" || p.tipo === "pago" ? "sin_gasto" : "nueva", relacionados: p.relacionados ?? null,
           };
           const { error: e4 } = await supabase.from("cfdi").insert(row);
           if (e4) throw e4;
+          if (p.tipo === "pago" && p.relacionados?.length) {   // marca las facturas PPD que liquida
+            await supabase.from("cfdi").update({ pagada_en: p.fecha }).in("uuid", p.relacionados);
+            setCfdis((prev) => prev.map((c) => (p.relacionados!.includes(c.uuid) ? { ...c, pagada_en: p.fecha } : c)));
+          }
           const { data: v } = await supabase.from("v_cfdi").select("*").eq("uuid", p.uuid).single();
           if (v && p.fecha.startsWith(String(initial.anio))) setCfdis((prev) => [v as Cfdi, ...prev]);
           else otroAnio.add(p.fecha.slice(0, 4));
@@ -442,7 +446,7 @@ export function Facturacion({ initial, vista = "resumen", filtro, soloLectura = 
       <div className="card full-bleed">
         <div className="ct"><span>Detalle de facturas</span><span className="tag">{lista.length} de {cfdis.length} · <button className="link" type="button" onClick={exportar}>exportar CSV</button></span></div>
         <div className="g4" style={{ marginBottom: 8 }}>
-          <div><label htmlFor="f-tipo">Tipo</label><select id="f-tipo" value={ftipo} onChange={(e) => setFtipo(e.target.value)}><option value="">Todas</option><option value="recibida">Recibidas</option><option value="nomina">Nómina</option></select></div>
+          <div><label htmlFor="f-tipo">Tipo</label><select id="f-tipo" value={ftipo} onChange={(e) => setFtipo(e.target.value)}><option value="">Todas</option><option value="recibida">Recibidas</option><option value="nomina">Nómina</option><option value="pago">Complementos de pago</option></select></div>
           <div><label htmlFor="f-mes">Mes</label><select id="f-mes" value={fmes} onChange={(e) => setFmes(e.target.value)}><option value="">Todos</option>{meses.map((k) => <option key={k} value={k}>{ml(k)}</option>)}</select></div>
           <div><label htmlFor="f-est">Estado</label><select id="f-est" value={festado} onChange={(e) => setFestado(e.target.value)}><option value="">Todos</option>{(Object.keys(ESTADO) as Cfdi["estado"][]).map((k) => <option key={k} value={k}>{ESTADO[k][0]}</option>)}</select></div>
           <div style={{ position: "relative" }}><label>Rubros</label>
@@ -470,7 +474,7 @@ export function Facturacion({ initial, vista = "resumen", filtro, soloLectura = 
             {lista.map((c) => (
               <tr key={c.uuid}>
                 <td>{c.fecha}</td>
-                <td><span className="badge" style={{ background: TIPO_COLOR[c.tipo] }}>{TIPO_LABEL[c.tipo]}</span></td>
+                <td><span className="badge" style={{ background: TIPO_COLOR[c.tipo] }}>{TIPO_LABEL[c.tipo]}</span>{c.metodo_pago === "PPD" && c.tipo !== "pago" && <div className="hint" style={{ fontSize: 10.5, marginTop: 2 }} title="Pago en parcialidades o diferido: se deduce cuando llega el complemento de pago">{c.pagada_en ? `PPD · pagada ${c.pagada_en}` : "PPD · sin complemento de pago"}</div>}{c.tipo === "pago" && c.relacionados?.length ? <div className="hint" style={{ fontSize: 10.5, marginTop: 2 }}>paga {c.relacionados.map((u) => cfdis.find((x) => x.uuid === u) ? `${cfdis.find((x) => x.uuid === u)!.serie ?? ""} ${cfdis.find((x) => x.uuid === u)!.folio ?? u.slice(0, 8)}` : u.slice(0, 8) + "… (no cargada)").join(", ")}</div> : null}</td>
                 <td className="n" style={{ fontWeight: 700, color: "var(--ink)" }}>{fmt2(c.total)}</td><td>{c.moneda}</td><td className="n">{fmt2(c.total_mxn)}</td>
                 <td style={{ whiteSpace: "normal", maxWidth: 200, fontWeight: 600, color: "var(--ink)" }}>{c.emisor_nombre}</td>
                 <td style={{ whiteSpace: "normal", maxWidth: 160 }}>{c.receptor_nombre}</td>

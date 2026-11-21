@@ -30,12 +30,20 @@ Reglas: si no se ve la fecha usa ${hoy}; el monto es el TOTAL final (con propina
 Catálogo (rubro: subrubros):
 ${catalogo}`;
 
-  const r = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    body: JSON.stringify({ model: "claude-sonnet-4-5", max_tokens: 400, messages: [{ role: "user", content: [{ type: "image", source: { type: "base64", media_type: mime, data: b64 } }, { type: "text", text: prompt }] }] }),
-  });
-  if (!r.ok) return NextResponse.json({ error: `Anthropic ${r.status}: ${(await r.text()).slice(0, 200)}` }, { status: 502 });
+  // modelo: ANTHROPIC_MODEL en Vercel o, en su defecto, se prueban en orden (el primero que exista)
+  const modelos = [process.env.ANTHROPIC_MODEL, "claude-haiku-5-5", "claude-sonnet-5-5", "claude-sonnet-4-5", "claude-3-5-haiku-latest"].filter(Boolean) as string[];
+  let r: Response | null = null, ultimo = "";
+  for (const model of modelos) {
+    r = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      body: JSON.stringify({ model, max_tokens: 400, messages: [{ role: "user", content: [{ type: "image", source: { type: "base64", media_type: mime, data: b64 } }, { type: "text", text: prompt }] }] }),
+    });
+    if (r.ok) break;
+    ultimo = `${model}: ${r.status} ${(await r.text()).slice(0, 160)}`;
+    if (r.status !== 404) break;   // 401 = key inválida, 400 = imagen, 429 = límite: no tiene caso probar otro modelo
+  }
+  if (!r || !r.ok) return NextResponse.json({ error: `Anthropic no respondió (${ultimo}). ${/401/.test(ultimo) ? "Revisa ANTHROPIC_API_KEY en Vercel (Production) y vuelve a desplegar." : /404/.test(ultimo) ? "Ningún modelo disponible: define ANTHROPIC_MODEL en Vercel." : ""}` }, { status: 502 });
   const j = await r.json();
   const texto: string = (j.content ?? []).map((c: { type: string; text?: string }) => c.text ?? "").join("");
   const m = texto.match(/\{[\s\S]*\}/);

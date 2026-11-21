@@ -22,9 +22,10 @@ export async function subirCfdi(supabase: SupabaseClient, userId: string, rfcPro
     emisor_rfc: p.emisor_rfc, emisor_nombre: p.emisor_nombre, receptor_rfc: p.receptor_rfc, receptor_nombre: p.receptor_nombre,
     concepto: p.concepto, conceptos: p.conceptos, uso_cfdi: p.uso_cfdi, subtotal: p.subtotal, descuento: p.descuento, iva: p.iva, ret_isr: p.ret_isr, ret_iva: p.ret_iva, otros_impuestos: p.otros_impuestos, total: p.total,
     moneda: p.moneda, tc: p.tc, forma_pago: p.forma_pago, metodo_pago: p.metodo_pago, xml_documento_id: dx.id, pdf_documento_id: pdfId,
-    estado: p.tipo === "nomina" || p.tipo === "emitida" ? "sin_gasto" : "nueva",
+    estado: p.tipo === "nomina" || p.tipo === "emitida" || p.tipo === "pago" ? "sin_gasto" : "nueva", relacionados: p.relacionados ?? null,
   };
   const { error: e4 } = await supabase.from("cfdi").insert(row);
   if (e4) throw e4;
+  if (p.tipo === "pago" && p.relacionados?.length) await supabase.from("cfdi").update({ pagada_en: p.fecha }).in("uuid", p.relacionados);
   return { p, nuevo: true };
 }

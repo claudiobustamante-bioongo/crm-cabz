@@ -10,7 +10,7 @@ function must<T>(r: { data: T | null; error: { message: string } | null }, what:
 
 export async function loadGastos(supabase: SupabaseClient, anio: number): Promise<GastosData> {
   const desde = `${anio}-01-01`, hasta = `${anio}-12-31`;
-  const [rubros, cuentas, libros, pagadores, eventos, movimientos, anios, sinLigar, ligadas, saldosV, fechasV, pptos, ingAnio, deudasV, docsV, planAk] = await Promise.all([
+  const [rubros, cuentas, libros, pagadores, eventos, movimientos, anios, sinLigar, ligadas, saldosV, fechasV, pptos, ingAnio, deudasV, docsV, planAk, linksCfdi, linksExt] = await Promise.all([
     supabase.from("rubros").select("id,codigo,nombre,padre_id,clasificacion,emoji,activo")
       .eq("naturaleza", "gasto").eq("activo", true).order("orden").order("nombre"),
     supabase.from("cuentas").select("id,nombre,tipo,es_medio_pago").eq("activa", true).order("nombre"),
@@ -31,9 +31,18 @@ export async function loadGastos(supabase: SupabaseClient, anio: number): Promis
     supabase.from("v_deudas").select("*"),
     supabase.from("v_docs_por_mov").select("movimiento_id,docs"),
     supabase.from("v_plan_akela").select("rubro_id").eq("anio", anio).not("rubro_id", "is", null),
+    supabase.from("cfdi").select("movimiento_id,link_drive,serie,folio,emisor_nombre").not("movimiento_id", "is", null).not("link_drive", "is", null).gte("fecha", `${anio}-01-01`).lte("fecha", `${anio}-12-31`),
+    supabase.from("v_facturas_ext").select("movimiento_id,link_drive,nombre").not("movimiento_id", "is", null).not("link_drive", "is", null),
   ]);
 
   const movs = must<Movimiento[]>(movimientos, "movimientos");
+  // CFDI ligados desde el gasto (movimientos.cfdi_uuid) que tienen liga a Drive
+  const uuids = [...new Set(movs.map((m) => m.cfdi_uuid).filter(Boolean))] as string[];
+  const porUuid = new Map<string, { url: string; label: string }>();
+  for (let i = 0; i < uuids.length; i += 200) {
+    const { data } = await supabase.from("cfdi").select("uuid,link_drive,serie,folio,emisor_nombre").in("uuid", uuids.slice(i, i + 200)).not("link_drive", "is", null);
+    ((data ?? []) as { uuid: string; link_drive: string; serie: string | null; folio: string | null; emisor_nombre: string | null }[]).forEach((r) => porUuid.set(r.uuid, { url: r.link_drive, label: `${r.emisor_nombre ?? "CFDI"} ${[r.serie, r.folio].filter(Boolean).join(" ")}`.trim() }));
+  }
   const ids = movs.map((m) => m.id);
   const asignaciones = ids.length
     ? must<Asignacion[]>(
@@ -56,6 +65,11 @@ export async function loadGastos(supabase: SupabaseClient, anio: number): Promis
     movimientos: movs,
     asignaciones,
     cfdisSinLigar: must<Record<string, unknown>[]>(sinLigar, "cfdi").map((c) => ({ ...c, total_mxn: Number(c.total_mxn) })) as unknown as CfdiMini[],
+    linksPorMov: [
+      ...((linksCfdi.data ?? []) as { movimiento_id: string; link_drive: string; serie: string | null; folio: string | null; emisor_nombre: string | null }[]).map((r) => ({ mov: r.movimiento_id, url: r.link_drive, label: `${r.emisor_nombre ?? "CFDI"} ${[r.serie, r.folio].filter(Boolean).join(" ")}`.trim() })),
+      ...((linksExt.data ?? []) as { movimiento_id: string; link_drive: string; nombre: string }[]).map((r) => ({ mov: r.movimiento_id, url: r.link_drive, label: r.nombre })),
+      ...movs.filter((m) => m.cfdi_uuid && porUuid.has(m.cfdi_uuid)).map((m) => ({ mov: m.id, ...porUuid.get(m.cfdi_uuid!)! })),
+    ].reduce<Record<string, { url: string; label: string }[]>>((a, r) => { const l = (a[r.mov] ??= []); if (!l.some((x) => x.url === r.url)) l.push({ url: r.url, label: r.label }); return a; }, {}),
     akelaRubroIds: [...new Set(((planAk.data ?? []) as { rubro_id: string }[]).map((r) => r.rubro_id))],
     docsPorMov: ((docsV.data ?? []) as { movimiento_id: string; docs: number }[]).reduce<Record<string, number>>((a, r) => { a[r.movimiento_id] = Number(r.docs); return a; }, {}),
     deudas: ((deudasV.data ?? []) as Record<string, unknown>[]).map((d) => Object.fromEntries(Object.entries(d).map(([k, v]) => [k, typeof v === "string" && /^-?\d+(\.\d+)?$/.test(v) ? Number(v) : v]))) as unknown as Deuda[],
