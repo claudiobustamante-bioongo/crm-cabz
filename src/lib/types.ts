@@ -272,6 +272,7 @@ export interface AkelaData {
   destinos: { id: string; nombre: string; tipo: string }[];   // a dónde puede ir un depósito de Luis Miguel (fondo o cuentas mías)
   depLM: { id: string; fecha: string; monto_mxn: number; cuenta: string | null; cuenta_destino: string | null; descripcion: string | null }[];   // transferencias de Luis Miguel del año
   pagadores: Catalogo[];
+  planSiguiente: { anio: number; total: number };   // presupuesto Akela (pago yo) del año siguiente al actual
 }
 
 /* ---------- Analíticas ---------- */

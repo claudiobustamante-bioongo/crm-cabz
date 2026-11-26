@@ -280,6 +280,10 @@ export async function loadContabilidad(supabase: SupabaseClient, anio: number): 
 
 export async function loadAkela(supabase: SupabaseClient, anio: number, rol: string | null): Promise<AkelaData> {
   const desde = `${anio}-01-01`, hasta = `${anio}-12-31`;
+  // presupuesto del año siguiente al actual (lo que sale de Claudio): base de los retiros en la proyección del fondo
+  const anioPpto = new Date().getFullYear() + 1;
+  const { data: pSig } = await supabase.from("v_plan_akela").select("monto").eq("anio", anioPpto).eq("pagador", "CABZ");
+  const planSiguiente = { anio: anioPpto, total: ((pSig ?? []) as { monto: number }[]).reduce((a, r) => a + Number(r.monto ?? 0), 0) };
   const num = (r: Record<string, unknown>) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, typeof v === "string" && /^-?\d+(\.\d+)?$/.test(v) ? Number(v) : v]));
   const [plan, rp, libro, cuentas, saldos, ibkr, ledger, tc, cfg, anios, rubros, asigAk, movAnio, medios, destinos, depLM, pagadores] = await Promise.all([
     supabase.from("v_plan_akela").select("*").eq("anio", anio).order("linea").order("mes"),
@@ -316,6 +320,7 @@ export async function loadAkela(supabase: SupabaseClient, anio: number, rol: str
   const akelaId = rubrosAll.find((r) => !r.padre_id && r.nombre === "Akela")?.id;
   const listaAnios = new Set<number>(must<{ anio: number }[]>(anios, "anios").map((a) => a.anio)); listaAnios.add(anio);
   return {
+    planSiguiente,
     anio, anios: [...listaAnios].sort(), rol,
     plan: must<Record<string, unknown>[]>(plan, "plan").map(num) as unknown as PlanAkela[],
     realPlan: must<Record<string, unknown>[]>(rp, "real").map(num) as unknown as AkelaRealPlan[],
