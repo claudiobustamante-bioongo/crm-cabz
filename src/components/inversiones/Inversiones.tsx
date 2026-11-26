@@ -1,4 +1,5 @@
 "use client";
+import { ProyeccionNW } from "./ProyeccionNW";
 import { Fragment, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { CuentaSaldo, IbkrMes, InversionesData, TipoCambio } from "@/lib/types";
@@ -394,6 +395,8 @@ export function Inversiones({ initial }: { initial: InversionesData }) {
           <p className="hint">Excluye CBZBurguer y el Fondo Akela (son de tus papás). USD al FIX más reciente. {initial.flexHoy ? "El botón trae el NAV de IBKR al último día hábil (mes en curso como parcial) y el FIX del día." : "Para que el botón traiga también el NAV de hoy de IBKR, agrega IBKR_FLEX_QUERY_MTD (y _MTD_2) en Vercel."} AFORE, PPR y cuentas en el extranjero: con «Guardar saldo» a la izquierda.</p>
         </div>
       </div>
+
+      {nw && <ProyeccionNW netoHoy={nw.neto_mxn} {...initial.proyeccion} />}
 
       {toast && <div className="toast" role="status">{toast}</div>}
     </section>

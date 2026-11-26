@@ -166,6 +166,7 @@ export interface NetWorth { retiro_inversion_mxn: number; efectivo_mxn: number; 
 
 export interface InversionesData {
   cuentasIbkr: { id: string; nombre: string; titular: string }[];
+  proyeccion: { desde: string; hasta: string; ingresos12: number; gastos12: number; deuda12: number };   // base del ahorro anual actual
   filas: IbkrMes[];
   tc: TipoCambio[];
   retiro: CuentaSaldo[];

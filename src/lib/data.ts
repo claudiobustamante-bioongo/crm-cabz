@@ -145,6 +145,17 @@ export async function loadIngresos(supabase: SupabaseClient, anio: number): Prom
 }
 
 export async function loadInversiones(supabase: SupabaseClient): Promise<InversionesData> {
+  // ahorro actual = últimos 12 meses cerrados: ingresos − gastos que pagas tú − abonos a deuda (misma regla que Analíticas)
+  const hoyP = new Date();
+  const hastaP = new Date(Date.UTC(hoyP.getFullYear(), hoyP.getMonth(), 0)).toISOString().slice(0, 10);
+  const desdeP = new Date(Date.UTC(hoyP.getFullYear(), hoyP.getMonth() - 12, 1)).toISOString().slice(0, 10);
+  const sumP = (r: { data: unknown }) => ((r.data ?? []) as { monto_mxn: number }[]).reduce((a, x) => a + Number(x.monto_mxn ?? 0), 0);
+  const [pIng, pGas, pDeu] = await Promise.all([
+    supabase.from("v_ingresos").select("monto_mxn").eq("estado", "real").gte("fecha", desdeP).lte("fecha", hastaP).range(0, 9999),
+    supabase.from("v_asignaciones").select("monto_mxn").eq("tipo", "gasto").eq("estado", "real").eq("pagador", "CABZ").gte("fecha", desdeP).lte("fecha", hastaP).range(0, 19999),
+    supabase.from("v_movimientos").select("monto_mxn").eq("tipo", "abono_deuda").eq("estado", "real").gte("fecha", desdeP).lte("fecha", hastaP).range(0, 9999),
+  ]);
+  const proyeccion = { desde: desdeP, hasta: hastaP, ingresos12: sumP(pIng), gastos12: sumP(pGas), deuda12: sumP(pDeu) };
   const [cuentas, filas, tc, saldos, nw, ledger] = await Promise.all([
     supabase.from("cuentas").select("id,nombre,tipo,moneda,activa,titular_id,es_medio_pago,pagadores!cuentas_titular_id_fkey(codigo)").eq("activa", true).in("tipo", ["inversion", "retiro", "cheques"]).eq("es_medio_pago", false).order("nombre"),
     supabase.from("ibkr_estados_mensuales").select("id,cuenta_id,periodo,real_etf,real_acc,real_opc,real_fx,real_bono,nr_etf,nr_acc,nr_opc,nr_fx,nr_bono,div_bruto,div_ret,cupon,cupon_ret,comisiones,int_broker,depositos,nav_efe,nav_acc,nav_opc,nav_bono,nav_dev,nav_final,fuente").order("periodo").range(0, 4999),
@@ -161,6 +172,7 @@ export async function loadInversiones(supabase: SupabaseClient): Promise<Inversi
   const ibkrRows = must<Record<string, unknown>[]>(filas, "ibkr").map(num) as unknown as IbkrMes[];
   return {
     cuentasIbkr: cs.filter((c) => c.tipo === "inversion").map((c) => ({ id: c.id, nombre: c.nombre, titular: c.titular })),
+    proyeccion,
     filas: ibkrRows,
     tc: must<TipoCambio[]>(tc, "tipos_cambio").map((t) => ({ ...t, tc_mxn: Number(t.tc_mxn) })),
     retiro: cs.map((c) => {
