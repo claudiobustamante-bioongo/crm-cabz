@@ -1,4 +1,5 @@
 "use client";
+import { Proyeccion } from "@/components/Proyeccion";
 import { Fragment, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -601,6 +602,18 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
           <p className="hint">Hoy el presupuesto sale de tu bolsa y el fondo no se toca: con 0 % no se acaba nunca. El escenario base ({(pr.rend_real * 100).toFixed(0)} % real, TC {pr.tc}) muestra qué pasaría si todo el presupuesto saliera del fondo. Sin inflación: los montos son de hoy.</p>
         </div>
       </div>
+
+      {(() => {
+        // aportaciones al fondo (no gastos) del año elegido; si es el año en curso se anualizan con los meses transcurridos
+        const hoyD = new Date(), esActual = anio === hoyD.getFullYear(), meses = esActual ? Math.max(1, hoyD.getMonth() + 1) : 12, f = 12 / meses;
+        const apYo = sum(aportes.filter((x) => (x.quien ?? "CABZ") === "CABZ").map((x) => x.entrada_mxn)), apLM = sum(aportes.filter((x) => x.quien === "HAMB").map((x) => x.entrada_mxn));
+        const r100 = (v: number) => Math.round((v * f) / 1000) * 1000;
+        return <Proyeccion id="ak" titulo="Proyección del Fondo Akela" tag={<>saldo hoy {fmt(fondoMxn)}</>} inicial={fondoMxn}
+          aportes={[{ label: "Mi aportación anual", def: r100(apYo), hint: esActual ? `ritmo ${anio}` : `${anio}` }, { label: "Aportación de Luis Miguel", def: r100(apLM), hint: esActual ? `ritmo ${anio}` : `${anio}` }]}
+          minimo={{ label: "Mínimo (solo yo)", def: r100(apYo), hint: "sin Luis Miguel" }}
+          conRetiros={{ def: 0, hint: `en ${anio}: ${fmt(totRetYo + totRetLM)}` }} conExtras
+          nota={<>Base: aportaciones al fondo en {anio}{esActual ? ` (${meses} meses, anualizadas ×${f.toFixed(2)})` : ""} — tú {fmt(apYo)}, Luis Miguel {fmt(apLM)}; no incluye lo que pagas directo de gastos ni depósitos a tus papás.</>} />;
+      })()}
 
       {toast && <div className="toast" role="status">{toast}</div>}
     </section>
