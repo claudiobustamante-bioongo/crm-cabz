@@ -17,7 +17,7 @@ export type ProyeccionProps = {
   id: string;                                       // prefijo único para los id de los inputs
 };
 
-const PLAZO = 20, MIN = -1;
+const PLAZO = 20, MIN = -1, UNICA = 99;   // claves: escenario mínimo y «esperado + aportación única»
 const ESCENARIOS: { v: number; color: string; dash?: string; ancho: number }[] = [
   { v: 0.2, color: "#2F6B40", ancho: 1.6 },
   { v: 0.15, color: "#4F8A5E", ancho: 1.4 },
@@ -35,7 +35,8 @@ export function Proyeccion({ titulo, tag, inicial, aportes, minimo, conRetiros, 
   const [minV, setMinV] = useState(minimo.def);
   const [ret, setRet] = useState(conRetiros?.def ?? 0);
   const [indexar, setIndexar] = useState(true);       // retiros crecen con la inflación (en términos reales quedan constantes)
-  const [extras, setExtras] = useState<{ anio: string; monto: string; nota: string }[]>([]);
+  const [extras, setExtras] = useState<{ anio: string; monto: string; nota: string }[]>([{ anio: String(anioHoy + 1), monto: "", nota: "" }]);
+  const [modoUnica, setModoUnica] = useState<"comparar" | "todos">("comparar");   // comparar = línea aparte; todos = se suma a cada escenario
   const [tasa, setTasa] = useState(6);
   const [conRend, setConRend] = useState(true);
   const [inflacion, setInflacion] = useState(4);
@@ -45,26 +46,31 @@ export function Proyeccion({ titulo, tag, inicial, aportes, minimo, conRetiros, 
   const [hover, setHover] = useState<number | null>(null);
   const ANIOS = Math.min(50, Math.max(1, Math.round(Number(plazoTxt)) || PLAZO));
   const esperado = ap.reduce((a, b) => a + (Number(b) || 0), 0);
-  const etiqueta = (v: number) => (v === MIN ? minimo.label : v === 0 ? "Esperado" : `${v > 0 ? "+" : "−"}${Math.round(Math.abs(v) * 100)} %`);
+  const etiqueta = (v: number) => (v === UNICA ? "Esperado + única" : v === MIN ? minimo.label : v === 0 ? "Esperado" : `${v > 0 ? "+" : "−"}${Math.round(Math.abs(v) * 100)} %`);
 
-  // sumas adicionales por índice de año (1 = el año que entra)
+  // aportaciones únicas por índice de año: el año siguiente al actual (o el actual) = 1, entra al inicio del primer año proyectado
   const extraPorAnio = useMemo(() => {
     const m = new Map<number, number>();
-    extras.forEach((e) => { const a = Math.max(1, (Number(e.anio) || 0) - anioHoy + 1), v = Number(e.monto) || 0; if (v && a <= 50) m.set(a, (m.get(a) ?? 0) + v); });
+    extras.forEach((e) => { const a = Math.max(1, (Number(e.anio) || 0) - anioHoy), v = Number(e.monto) || 0; if (v && a <= 50) m.set(a, (m.get(a) ?? 0) + v); });
     return m;
   }, [extras, anioHoy]);
 
-  const series = useMemo(() => [...ESCENARIOS, { v: MIN, color: "#6B6760", dash: "2 4", ancho: 2 }].map((e) => {
-    const anual = e.v === MIN ? minV : esperado * (1 + e.v);
-    const r = conRend ? tasa / 100 / 12 : 0, inf = inflacion / 100;
-    const pts: number[] = [inicial]; let v = inicial;
-    for (let a = 1; a <= ANIOS; a++) {
-      const retA = ret * (indexar ? Math.pow(1 + inf, a - 1) : 1), neto = anual - retA;   // año 1 = monto de hoy; después crece con la inflación
-      v += extraPorAnio.get(a) ?? 0; for (let m = 0; m < 12; m++) v = v * (1 + r) + neto / 12; pts.push(real ? v / Math.pow(1 + inf, a) : v);
-    }
-    const agota = pts.findIndex((p, i) => i > 0 && p <= 0);
-    return { ...e, anual, pts, agota };
-  }), [esperado, minV, ret, indexar, tasa, conRend, inflacion, real, inicial, ANIOS, extraPorAnio]);
+  const totExtras = [...extraPorAnio.values()].reduce((a, b) => a + b, 0);
+  const series = useMemo(() => {
+    const sim = (anual: number, ext: Map<number, number>) => {
+      const r = conRend ? tasa / 100 / 12 : 0, inf = inflacion / 100;
+      const pts: number[] = [inicial]; let v = inicial;
+      for (let a = 1; a <= ANIOS; a++) {
+        const retA = ret * (indexar ? Math.pow(1 + inf, a - 1) : 1), neto = anual - retA;   // año 1 = monto de hoy; después crece con la inflación
+        v += ext.get(a) ?? 0; for (let m = 0; m < 12; m++) v = v * (1 + r) + neto / 12; pts.push(real ? v / Math.pow(1 + inf, a) : v);
+      }
+      return { pts, agota: pts.findIndex((p, i) => i > 0 && p <= 0) };
+    };
+    const extTodos = modoUnica === "todos" ? extraPorAnio : new Map<number, number>();
+    const out = [...ESCENARIOS, { v: MIN, color: "#6B6760", dash: "2 4", ancho: 2 }].map((e) => { const anual = e.v === MIN ? minV : esperado * (1 + e.v); return { ...e, anual, ...sim(anual, extTodos) }; });
+    if (modoUnica === "comparar" && totExtras !== 0) out.splice(0, 0, { v: UNICA, color: "#B8924D", ancho: 3.4, dash: undefined, anual: esperado, ...sim(esperado, extraPorAnio) });
+    return out;
+  }, [esperado, minV, ret, indexar, tasa, conRend, inflacion, real, inicial, ANIOS, extraPorAnio, modoUnica, totExtras]);
 
   const visibles = series.filter((s) => !ocultas.has(s.v));
   const W = 760, H = 330, L = 64, R = 16, T = 14, B = 30;
@@ -79,7 +85,7 @@ export function Proyeccion({ titulo, tag, inicial, aportes, minimo, conRetiros, 
   const hitos = [...new Set([1, ...[0.25, 0.5, 0.75].map((f) => Math.round(ANIOS * f)), ANIOS])].filter((a) => a >= 1 && a <= ANIOS).sort((a, b) => a - b);
   const pasoX = ANIOS <= 10 ? 1 : ANIOS <= 20 ? 5 : 10;
   const ticksX = Array.from({ length: Math.floor(ANIOS / pasoX) + 1 }, (_, i) => i * pasoX).concat(ANIOS % pasoX ? [ANIOS] : []);
-  const totExtras = [...extraPorAnio.values()].reduce((a, b) => a + b, 0);
+  const unica = series.find((s) => s.v === UNICA);
 
   return (
     <div className="card">
@@ -105,15 +111,19 @@ export function Proyeccion({ titulo, tag, inicial, aportes, minimo, conRetiros, 
           {(real || (!!conRetiros && indexar && ret !== 0)) && <div className="hint" style={{ fontSize: 11, display: "flex", gap: 4, alignItems: "center", marginTop: 4 }}>{real ? "pesos de hoy · " : ""}inflación <input type="number" step={0.5} value={inflacion} onChange={(e) => setInflacion(Number(e.target.value))} style={{ width: 56, padding: "2px 6px" }} aria-label="Inflación anual %" /> %</div>}</div>
       </div>
 
-      {conExtras && <div style={{ margin: "2px 0 8px" }}>
-        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}><b style={{ fontSize: 13 }}>Sumas adicionales</b><span className="hint">montos únicos que entran al inicio del año indicado{totExtras ? ` · total ${fmt(totExtras)}` : ""}</span>
-          <button type="button" className="link" onClick={() => setExtras([...extras, { anio: String(anioHoy + 1), monto: "", nota: "" }])}>+ agregar</button></div>
+      {conExtras && <div style={{ margin: "2px 0 10px", padding: "8px 10px", background: "var(--bone)", border: "1px solid var(--border-soft)", borderRadius: 8 }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}><b style={{ fontSize: 13 }}>Aportación única (lump sum)</b><span className="hint">monto que entra al inicio del año indicado{totExtras ? ` · total ${fmt(totExtras)}` : ""}</span>
+          <span className="pills" style={{ margin: 0 }}><button type="button" className="pill" aria-pressed={modoUnica === "comparar"} onClick={() => setModoUnica("comparar")} style={{ padding: "1px 8px", fontSize: 11 }}>comparar vs esperado</button><button type="button" className="pill" aria-pressed={modoUnica === "todos"} onClick={() => setModoUnica("todos")} style={{ padding: "1px 8px", fontSize: 11 }}>sumar a todos los escenarios</button></span>
+          <button type="button" className="link" onClick={() => setExtras([...extras, { anio: String(anioHoy + 1), monto: "", nota: "" }])}>+ otra</button></div>
         {extras.map((e, i) => <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4, flexWrap: "wrap" }}>
           <input type="number" value={e.anio} min={anioHoy} max={anioHoy + 50} onChange={(ev) => setExtras(extras.map((x, j) => (j === i ? { ...x, anio: ev.target.value } : x)))} style={{ width: 90 }} aria-label="Año" />
-          <input type="number" value={e.monto} step={10000} placeholder="monto (− para un retiro único)" onChange={(ev) => setExtras(extras.map((x, j) => (j === i ? { ...x, monto: ev.target.value } : x)))} style={{ width: 170 }} aria-label="Monto" />
+          <input type="number" value={e.monto} step={500000} placeholder="monto, p. ej. 8000000 (− = retiro único)" onChange={(ev) => setExtras(extras.map((x, j) => (j === i ? { ...x, monto: ev.target.value } : x)))} style={{ width: 170 }} aria-label="Monto" />
           <input type="text" value={e.nota} placeholder="nota (venta, herencia, bono…)" onChange={(ev) => setExtras(extras.map((x, j) => (j === i ? { ...x, nota: ev.target.value } : x)))} style={{ flex: 1, minWidth: 140 }} aria-label="Nota" />
           <button type="button" className="del" onClick={() => setExtras(extras.filter((_, j) => j !== i))}>✕</button>
         </div>)}
+        {unica && (() => { const fin = unica.pts[ANIOS], sin = base.pts[ANIOS], dif = fin - sin; return (
+          <div style={{ marginTop: 8, fontSize: 13 }}>Con <b>{fmt(totExtras)}</b> ({extras.filter((e) => Number(e.monto)).map((e) => `${fmt(Number(e.monto))} en ${e.anio}`).join(" + ")}): en {anioHoy + ANIOS} llegas a <b style={{ color: "#8C6D38" }}>{fmt(fin)}</b> vs {fmt(sin)} sin ella → <b className={dif >= 0 ? "pos" : "neg"}>{dif >= 0 ? "+" : "−"}{fmt(Math.abs(dif))}</b>{totExtras > 0 && dif > 0 ? <span className="hint"> (cada peso aportado vale {(dif / totExtras).toFixed(2)} al final{real ? ", en pesos de hoy" : ""})</span> : null}
+            {base.agota > 0 && (unica.agota < 0 || unica.agota > base.agota) ? <span> · el fondo {unica.agota < 0 ? "ya no se agota" : `se agota en ${anioHoy + unica.agota} en vez de ${anioHoy + base.agota}`}</span> : null}.</div>); })()}
       </div>}
 
       <div style={{ position: "relative" }}>
