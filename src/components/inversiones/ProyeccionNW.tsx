@@ -7,6 +7,8 @@ import { fmt } from "@/lib/format";
 type Props = { netoHoy: number; ingresos12: number; gastos12: number; deuda12: number; desde: string; hasta: string };
 
 const ANIOS = 20;
+const ESPERADO = 1_300_000, MINIMO = 480_000;   // ahorro anual de los próximos años (definido por Claudio, nov 2026)
+const MIN = -1;                                 // clave del escenario «mínimo»
 const ESCENARIOS: { v: number; color: string; dash?: string; ancho: number }[] = [
   { v: 0.2, color: "#2F6B40", ancho: 1.6 },
   { v: 0.15, color: "#4F8A5E", ancho: 1.4 },
@@ -16,25 +18,26 @@ const ESCENARIOS: { v: number; color: string; dash?: string; ancho: number }[] =
   { v: -0.15, color: "#B4683F", dash: "5 4", ancho: 1.4 },
   { v: -0.2, color: "#A04634", dash: "5 4", ancho: 1.6 },
 ];
-const etiqueta = (v: number) => (v === 0 ? "Ahorro actual" : `${v > 0 ? "+" : "−"}${Math.round(Math.abs(v) * 100)} %`);
+const etiqueta = (v: number) => (v === MIN ? "Mínimo" : v === 0 ? "Esperado" : `${v > 0 ? "+" : "−"}${Math.round(Math.abs(v) * 100)} %`);
 const corto = (n: number) => { const a = Math.abs(n), s = n < 0 ? "−" : ""; return a >= 1e6 ? `${s}$${(a / 1e6).toFixed(a >= 1e8 ? 0 : 1)}M` : a >= 1e3 ? `${s}$${Math.round(a / 1e3)}k` : `${s}$${Math.round(a)}`; };
 
 export function ProyeccionNW({ netoHoy, ingresos12, gastos12, deuda12, desde, hasta }: Props) {
-  const ahorroBase = Math.round(ingresos12 - gastos12 - deuda12);
-  const [ahorro, setAhorro] = useState(ahorroBase);
+  const historico = Math.round(ingresos12 - gastos12 - deuda12);
+  const [ahorro, setAhorro] = useState(ESPERADO);
+  const [minimo, setMinimo] = useState(MINIMO);
   const [tasa, setTasa] = useState(6);
   const [inflacion, setInflacion] = useState(4);
   const [real, setReal] = useState(false);
   const [ocultas, setOcultas] = useState<Set<number>>(new Set());
   const [hover, setHover] = useState<number | null>(null);
 
-  const series = useMemo(() => ESCENARIOS.map((e) => {
-    const anual = ahorro * (1 + e.v);
+  const series = useMemo(() => [...ESCENARIOS, { v: MIN, color: "#6B6760", dash: "2 4", ancho: 2 }].map((e) => {
+    const anual = e.v === MIN ? minimo : ahorro * (1 + e.v);
     const r = tasa / 100 / 12, inf = inflacion / 100;
     const pts: number[] = [netoHoy]; let v = netoHoy;
     for (let a = 1; a <= ANIOS; a++) { for (let m = 0; m < 12; m++) v = v * (1 + r) + anual / 12; pts.push(real ? v / Math.pow(1 + inf, a) : v); }
     return { ...e, anual, pts };
-  }), [ahorro, tasa, inflacion, real, netoHoy]);
+  }), [ahorro, minimo, tasa, inflacion, real, netoHoy]);
 
   const visibles = series.filter((s) => !ocultas.has(s.v));
   const W = 760, H = 330, L = 64, R = 16, T = 14, B = 30;
@@ -52,9 +55,11 @@ export function ProyeccionNW({ netoHoy, ingresos12, gastos12, deuda12, desde, ha
   return (
     <div className="card">
       <div className="ct"><span>Proyección de tu net worth · 20 años</span><span className="tag">cuentas propias · hoy {fmt(netoHoy)}</span></div>
-      <div className="g3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", marginBottom: 6 }}>
-        <div><label htmlFor="p-ah">Ahorro anual actual</label><input id="p-ah" type="number" step={10000} value={ahorro} onChange={(e) => setAhorro(Number(e.target.value))} />
-          <div className="hint" style={{ fontSize: 11 }}>{ahorro !== ahorroBase ? <button type="button" className="link" onClick={() => setAhorro(ahorroBase)}>volver a {fmt(ahorroBase)}</button> : `${fmt(ahorroBase / 12)}/mes`}</div></div>
+      <div className="g3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", marginBottom: 6 }}>
+        <div><label htmlFor="p-ah">Ahorro anual esperado</label><input id="p-ah" type="number" step={10000} value={ahorro} onChange={(e) => setAhorro(Number(e.target.value))} />
+          <div className="hint" style={{ fontSize: 11 }}>{fmt(ahorro / 12)}/mes{ahorro !== ESPERADO ? <> · <button type="button" className="link" onClick={() => setAhorro(ESPERADO)}>volver a {fmt(ESPERADO)}</button></> : null}</div></div>
+        <div><label htmlFor="p-min">Ahorro anual mínimo</label><input id="p-min" type="number" step={10000} value={minimo} onChange={(e) => setMinimo(Number(e.target.value))} />
+          <div className="hint" style={{ fontSize: 11 }}>{fmt(minimo / 12)}/mes · piso</div></div>
         <div><label htmlFor="p-r">Rendimiento anual</label><input id="p-r" type="number" step={0.5} value={tasa} onChange={(e) => setTasa(Number(e.target.value))} /><div className="hint" style={{ fontSize: 11 }}>% nominal sobre todo el neto</div></div>
         <div><label htmlFor="p-i">Inflación</label><input id="p-i" type="number" step={0.5} value={inflacion} onChange={(e) => setInflacion(Number(e.target.value))} disabled={!real} />
           <label style={{ display: "flex", gap: 6, alignItems: "center", margin: "4px 0 0", fontWeight: 400, fontSize: 12 }}><input type="checkbox" checked={real} onChange={(e) => setReal(e.target.checked)} style={{ width: "auto" }} /> en pesos de hoy</label></div>
@@ -86,9 +91,9 @@ export function ProyeccionNW({ netoHoy, ingresos12, gastos12, deuda12, desde, ha
       <div className="tbl" style={{ marginTop: 8 }}><table>
         <thead><tr><th>Escenario</th><th className="n">Ahorro/año</th>{hitos.map((a) => <th key={a} className="n">{a} año{a > 1 ? "s" : ""}<div className="hint" style={{ fontWeight: 400 }}>{anioHoy + a}</div></th>)}</tr></thead>
         <tbody>{series.map((s) => <tr key={s.v} className={s.v === 0 ? "tot" : ""}><td><span style={{ color: s.color, fontWeight: 700 }}>●</span> {etiqueta(s.v)}</td><td className="n">{fmt(s.anual)}</td>
-          {hitos.map((a) => <td key={a} className="n" title={s.v === 0 ? undefined : `${s.pts[a] >= base.pts[a] ? "+" : "−"}${fmt(Math.abs(s.pts[a] - base.pts[a]))} vs ahorro actual`}>{fmt(s.pts[a])}</td>)}</tr>)}</tbody>
+          {hitos.map((a) => <td key={a} className="n" title={s.v === 0 ? undefined : `${s.pts[a] >= base.pts[a] ? "+" : "−"}${fmt(Math.abs(s.pts[a] - base.pts[a]))} vs esperado`}>{fmt(s.pts[a])}</td>)}</tr>)}</tbody>
       </table></div>
-      <p className="hint">Ahorro actual = ingresos {fmt(ingresos12)} − gastos que pagas tú {fmt(gastos12)} − abonos a deuda {fmt(deuda12)}, del {desde} al {hasta}. Rendimiento compuesto mensual sobre todo el neto (incluye efectivo); ahorro constante en pesos {real ? `y valores deflactados al ${inflacion} % anual (pesos de hoy)` : "nominales (sin descontar inflación)"}. Sin impuestos ni cambios de ingreso.</p>
+      <p className="hint">Esperado {fmt(ESPERADO)} y mínimo {fmt(MINIMO)} al año son tus metas; las variaciones ± se aplican sobre el esperado. Referencia histórica (12 meses, {desde} a {hasta}): ingresos {fmt(ingresos12)} − gastos que pagas tú {fmt(gastos12)} − abonos a deuda {fmt(deuda12)} = <b>{fmt(historico)}</b>. Rendimiento compuesto mensual sobre todo el neto (incluye efectivo); ahorro constante en pesos {real ? `y valores deflactados al ${inflacion} % anual (pesos de hoy)` : "nominales (sin descontar inflación)"}. Sin impuestos ni cambios de ingreso.</p>
     </div>
   );
 }
