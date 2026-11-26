@@ -11,7 +11,7 @@ export type ProyeccionProps = {
   inicial: number;                                  // saldo de arranque (MXN)
   aportes: { label: string; def: number; hint?: string }[];   // se suman para el escenario esperado
   minimo: { label: string; def: number; hint?: string };
-  conRetiros?: { def: number; hint?: string };      // retiros anuales del saldo (se restan en todos los escenarios)
+  conRetiros?: { def: number; hint?: string };      // retiros anuales del saldo (se restan en todos los escenarios); opcionalmente crecen con la inflación
   conExtras?: boolean;                              // tabla de sumas adicionales (año, monto)
   nota?: ReactNode;                                 // texto al pie (referencia histórica)
   id: string;                                       // prefijo único para los id de los inputs
@@ -34,6 +34,7 @@ export function Proyeccion({ titulo, tag, inicial, aportes, minimo, conRetiros, 
   const [ap, setAp] = useState(aportes.map((a) => a.def));
   const [minV, setMinV] = useState(minimo.def);
   const [ret, setRet] = useState(conRetiros?.def ?? 0);
+  const [indexar, setIndexar] = useState(true);       // retiros crecen con la inflación (en términos reales quedan constantes)
   const [extras, setExtras] = useState<{ anio: string; monto: string; nota: string }[]>([]);
   const [tasa, setTasa] = useState(6);
   const [conRend, setConRend] = useState(true);
@@ -55,12 +56,15 @@ export function Proyeccion({ titulo, tag, inicial, aportes, minimo, conRetiros, 
 
   const series = useMemo(() => [...ESCENARIOS, { v: MIN, color: "#6B6760", dash: "2 4", ancho: 2 }].map((e) => {
     const anual = e.v === MIN ? minV : esperado * (1 + e.v);
-    const r = conRend ? tasa / 100 / 12 : 0, inf = inflacion / 100, neto = anual - ret;
+    const r = conRend ? tasa / 100 / 12 : 0, inf = inflacion / 100;
     const pts: number[] = [inicial]; let v = inicial;
-    for (let a = 1; a <= ANIOS; a++) { v += extraPorAnio.get(a) ?? 0; for (let m = 0; m < 12; m++) v = v * (1 + r) + neto / 12; pts.push(real ? v / Math.pow(1 + inf, a) : v); }
+    for (let a = 1; a <= ANIOS; a++) {
+      const retA = ret * (indexar ? Math.pow(1 + inf, a - 1) : 1), neto = anual - retA;   // año 1 = monto de hoy; después crece con la inflación
+      v += extraPorAnio.get(a) ?? 0; for (let m = 0; m < 12; m++) v = v * (1 + r) + neto / 12; pts.push(real ? v / Math.pow(1 + inf, a) : v);
+    }
     const agota = pts.findIndex((p, i) => i > 0 && p <= 0);
     return { ...e, anual, pts, agota };
-  }), [esperado, minV, ret, tasa, conRend, inflacion, real, inicial, ANIOS, extraPorAnio]);
+  }), [esperado, minV, ret, indexar, tasa, conRend, inflacion, real, inicial, ANIOS, extraPorAnio]);
 
   const visibles = series.filter((s) => !ocultas.has(s.v));
   const W = 760, H = 330, L = 64, R = 16, T = 14, B = 30;
@@ -85,8 +89,9 @@ export function Proyeccion({ titulo, tag, inicial, aportes, minimo, conRetiros, 
           <div className="hint" style={{ fontSize: 11 }}>{fmt(ap[i] / 12)}/mes{ap[i] !== a.def ? <> · <button type="button" className="link" onClick={() => setAp(ap.map((x, j) => (j === i ? a.def : x)))}>volver a {fmt(a.def)}</button></> : a.hint ? ` · ${a.hint}` : null}</div></div>)}
         <div><label htmlFor={`${id}-min`}>{minimo.label}</label><input id={`${id}-min`} type="number" step={10000} value={minV} onChange={(e) => setMinV(Number(e.target.value))} />
           <div className="hint" style={{ fontSize: 11 }}>{fmt(minV / 12)}/mes · {minimo.hint ?? "piso"}</div></div>
-        {conRetiros && <div><label htmlFor={`${id}-ret`}>Retiros anuales</label><input id={`${id}-ret`} type="number" step={10000} value={ret} onChange={(e) => setRet(Number(e.target.value))} />
-          <div className="hint" style={{ fontSize: 11 }}>{conRetiros.hint ?? "se restan en todos los escenarios"}</div></div>}
+        {conRetiros && <div><label htmlFor={`${id}-ret`}>Retiros anuales (hoy)</label><input id={`${id}-ret`} type="number" step={10000} value={ret} onChange={(e) => setRet(Number(e.target.value))} />
+          <label style={{ display: "flex", gap: 6, alignItems: "center", margin: "4px 0 0", fontWeight: 400, fontSize: 11.5 }}><input type="checkbox" checked={indexar} onChange={(e) => setIndexar(e.target.checked)} style={{ width: "auto" }} /> crecen con la inflación</label>
+          <div className="hint" style={{ fontSize: 11 }}>{ret !== conRetiros.def ? <><button type="button" className="link" onClick={() => setRet(conRetiros.def)}>volver a {fmt(conRetiros.def)}</button> · </> : null}{conRetiros.hint ?? "se restan en todos los escenarios"}</div></div>}
         <div><label style={{ display: "flex", gap: 6, alignItems: "center" }}><input type="checkbox" checked={conRend} onChange={(e) => setConRend(e.target.checked)} style={{ width: "auto" }} /> Rendimiento esperado</label>
           <input type="number" step={0.5} value={tasa} onChange={(e) => setTasa(Number(e.target.value))} disabled={!conRend} aria-label="Rendimiento anual %" />
           <div className="hint" style={{ fontSize: 11 }}>{conRend ? "% anual sobre todo el saldo" : "sin rendimiento: solo lo aportado"}</div></div>
@@ -97,7 +102,7 @@ export function Proyeccion({ titulo, tag, inicial, aportes, minimo, conRetiros, 
             <button type="button" className="pill" aria-pressed={!real} onClick={() => setReal(false)}>Nominal</button>
             <button type="button" className="pill" aria-pressed={real} onClick={() => setReal(true)}>Real</button>
           </div>
-          {real && <div className="hint" style={{ fontSize: 11, display: "flex", gap: 4, alignItems: "center", marginTop: 4 }}>pesos de hoy · inflación <input type="number" step={0.5} value={inflacion} onChange={(e) => setInflacion(Number(e.target.value))} style={{ width: 56, padding: "2px 6px" }} aria-label="Inflación anual %" /> %</div>}</div>
+          {(real || (!!conRetiros && indexar && ret !== 0)) && <div className="hint" style={{ fontSize: 11, display: "flex", gap: 4, alignItems: "center", marginTop: 4 }}>{real ? "pesos de hoy · " : ""}inflación <input type="number" step={0.5} value={inflacion} onChange={(e) => setInflacion(Number(e.target.value))} style={{ width: 56, padding: "2px 6px" }} aria-label="Inflación anual %" /> %</div>}</div>
       </div>
 
       {conExtras && <div style={{ margin: "2px 0 8px" }}>
@@ -140,7 +145,7 @@ export function Proyeccion({ titulo, tag, inicial, aportes, minimo, conRetiros, 
         <tbody>{series.map((s) => <tr key={s.v} className={s.v === 0 ? "tot" : ""}><td><span style={{ color: s.color, fontWeight: 700 }}>●</span> {etiqueta(s.v)}{s.agota > 0 && s.agota <= ANIOS ? <span className="neg" style={{ fontSize: 11 }}> · se agota en {anioHoy + s.agota}</span> : null}</td><td className="n">{fmt(s.anual)}</td>
           {hitos.map((a) => <td key={a} className={"n" + (s.pts[a] < 0 ? " neg" : "")} title={s.v === 0 ? undefined : `${s.pts[a] >= base.pts[a] ? "+" : "−"}${fmt(Math.abs(s.pts[a] - base.pts[a]))} vs esperado`}>{fmt(s.pts[a])}</td>)}</tr>)}</tbody>
       </table></div>
-      <p className="hint">Las variaciones ± se aplican sobre el esperado ({fmt(esperado)}/año{aportes.length > 1 ? ` = ${aportes.map((a, i) => `${a.label.toLowerCase()} ${fmt(ap[i])}`).join(" + ")}` : ""}). {conRend ? `Rendimiento ${tasa} % anual compuesto mensual sobre todo el saldo` : "Sin rendimiento: el saldo solo crece con lo aportado"}{ret ? `; retiros de ${fmt(ret)}/año en todos los escenarios` : ""}; montos constantes en pesos {real ? `y valores deflactados al ${inflacion} % anual (pesos de hoy)` : "nominales (sin descontar inflación)"}. Sin impuestos. {nota}</p>
+      <p className="hint">Las variaciones ± se aplican sobre el esperado ({fmt(esperado)}/año{aportes.length > 1 ? ` = ${aportes.map((a, i) => `${a.label.toLowerCase()} ${fmt(ap[i])}`).join(" + ")}` : ""}). {conRend ? `Rendimiento ${tasa} % anual compuesto mensual sobre todo el saldo` : "Sin rendimiento: el saldo solo crece con lo aportado"}{ret ? `; retiros de ${fmt(ret)}/año ${indexar ? `que crecen ${inflacion} % al año (constantes en términos reales; en ${anioHoy + ANIOS} serán ${fmt(ret * Math.pow(1 + inflacion / 100, ANIOS - 1))} nominales)` : "fijos en pesos nominales"}, en todos los escenarios` : ""}; montos constantes en pesos {real ? `y valores deflactados al ${inflacion} % anual (pesos de hoy)` : "nominales (sin descontar inflación)"}. Sin impuestos. {nota}</p>
     </div>
   );
 }

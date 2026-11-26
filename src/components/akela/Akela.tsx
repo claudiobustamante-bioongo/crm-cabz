@@ -611,7 +611,7 @@ export function Akela({ initial, soloLectura = false }: { initial: AkelaData; so
         return <Proyeccion id="ak" titulo="Proyección del Fondo Akela" tag={<>saldo hoy {fmt(fondoMxn)}</>} inicial={fondoMxn}
           aportes={[{ label: "Mi aportación anual", def: r100(apYo), hint: esActual ? `ritmo ${anio}` : `${anio}` }, { label: "Aportación de Luis Miguel", def: r100(apLM), hint: esActual ? `ritmo ${anio}` : `${anio}` }]}
           minimo={{ label: "Mínimo (solo yo)", def: r100(apYo), hint: "sin Luis Miguel" }}
-          conRetiros={{ def: 0, hint: `en ${anio}: ${fmt(totRetYo + totRetLM)}` }} conExtras
+          conRetiros={{ def: Math.round(planTotal / 1000) * 1000, hint: `presupuesto Akela ${anio} (lo que sale de ti) · retirado del fondo en ${anio}: ${fmt(totRetYo + totRetLM)}` }} conExtras
           nota={<>Base: aportaciones al fondo en {anio}{esActual ? ` (${meses} meses, anualizadas ×${f.toFixed(2)})` : ""} — tú {fmt(apYo)}, Luis Miguel {fmt(apLM)}; no incluye lo que pagas directo de gastos ni depósitos a tus papás.</>} />;
       })()}
 
